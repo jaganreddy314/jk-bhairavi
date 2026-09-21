@@ -1,0 +1,10 @@
+# Secrets and local state
+.db-password
+web/.env
+web/.env.local
+supabase/.temp/
+.DS_Store
+
+# Real business data - kept out of the public repo
+supabase/seed.sql
+HANDOVER.md

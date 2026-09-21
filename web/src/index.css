@@ -1,0 +1,228 @@
+@import "tailwindcss";
+
+/* All colours are tokens so light/dark swap in one place. Category colours are fixed everywhere. */
+:root {
+  color-scheme: light;
+  --page: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f1f0ec;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #7a7873;
+  --line: #e1e0d9;
+  --axis: #c3c2b7;
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --good: #006300;
+  --bad: #c42f2f;
+  --warn-bg: #fff6e0;
+  --warn-line: #f0d48a;
+  --warn-ink: #6b4a00;
+
+  --c-sales: #2a78d6;
+  --c-expenses: #8a8880;
+  --c-profit: #0b0b0b;
+  --c-food: #eb6834;
+  --c-labour: #4a3aa7;
+  --c-rent: #1baf7a;
+  --c-utilities: #eda100;
+  --c-equipment: #e87ba4;
+  --c-other: #008300;
+  --c-setup: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0f0f0e;
+    --surface: #1a1a19;
+    --surface-2: #242422;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #9a988f;
+    --line: #2c2c2a;
+    --axis: #45443f;
+    --accent: #3987e5;
+    --accent-ink: #ffffff;
+    --good: #2fbf2f;
+    --bad: #ef6b6b;
+    --warn-bg: #2e2510;
+    --warn-line: #5c4a1a;
+    --warn-ink: #f3d58c;
+
+    --c-sales: #3987e5;
+    --c-expenses: #8f8d85;
+    --c-profit: #ffffff;
+    --c-food: #d95926;
+    --c-labour: #9085e9;
+    --c-rent: #199e70;
+    --c-utilities: #c98500;
+    --c-equipment: #d55181;
+    --c-other: #008300;
+    --c-setup: #e66767;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0f0f0e;
+  --surface: #1a1a19;
+  --surface-2: #242422;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #9a988f;
+  --line: #2c2c2a;
+  --axis: #45443f;
+  --accent: #3987e5;
+  --accent-ink: #ffffff;
+  --good: #2fbf2f;
+  --bad: #ef6b6b;
+  --warn-bg: #2e2510;
+  --warn-line: #5c4a1a;
+  --warn-ink: #f3d58c;
+
+  --c-sales: #3987e5;
+  --c-expenses: #8f8d85;
+  --c-profit: #ffffff;
+  --c-food: #d95926;
+  --c-labour: #9085e9;
+  --c-rent: #199e70;
+  --c-utilities: #c98500;
+  --c-equipment: #d55181;
+  --c-other: #008300;
+  --c-setup: #e66767;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-line: var(--warn-line);
+  --color-warn-ink: var(--warn-ink);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Form controls share one look */
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 16px; /* 16px stops iOS zooming on focus */
+  outline: none;
+}
+.field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.field:disabled {
+  background: var(--surface-2);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.field-lg {
+  font-size: 22px;
+  padding: 12px 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--surface-2);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+.btn-danger {
+  color: var(--bad);
+}
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+
+/* Recharts focus outline off (we have hover tooltips) */
+.recharts-wrapper *:focus {
+  outline: none;
+}

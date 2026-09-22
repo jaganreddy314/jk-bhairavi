@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview"
   },
+  //dependencies are managed by pnpm workspaces, so we don't need to install them here
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "@tanstack/react-query": "^5.103.1",

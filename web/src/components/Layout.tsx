@@ -22,11 +22,11 @@ const NAV: { to: string; label: string; short: string; icon: ReactNode; end?: bo
 function BusinessSwitcher() {
   const { businesses, businessId, setBusinessId } = useBusiness()
   if (businesses.length < 2)
-    return <span className="hidden truncate text-sm font-medium text-ink-2 sm:inline">{businesses[0]?.name}</span>
+    return <span className="hidden max-w-40 truncate text-sm font-semibold text-ink-2 sm:inline">{businesses[0]?.name}</span>
   return (
     <select
       aria-label="Business"
-      className="field !w-auto !py-1.5 !text-sm font-semibold"
+      className="field !w-auto max-w-40 shrink-0 truncate !py-1.5 !text-sm font-semibold"
       value={businessId}
       onChange={(e) => setBusinessId(e.target.value)}
     >
@@ -55,21 +55,23 @@ export function Layout({ email }: { email?: string }) {
   return (
     <div className="min-h-dvh pb-24 md:pb-10">
       <header className="sticky top-0 z-20 border-b border-line bg-page/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2.5">
-          <NavLink to="/" className="flex shrink-0 items-center gap-2 font-bold" aria-label="Dashboard">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2.5 lg:gap-3">
+          <NavLink to="/" className="flex shrink-0 items-center font-bold" aria-label="Dashboard">
             <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
           </NavLink>
           <BusinessSwitcher />
-          <nav className="hidden flex-1 gap-1 md:flex" aria-label="Main">
+          {/* One line, always: short labels until there is room for the full ones. */}
+          <nav className="hidden min-w-0 flex-1 justify-center gap-0.5 md:flex lg:gap-1" aria-label="Main">
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end}
-                className={({ isActive }) => `rounded-lg px-3 py-1.5 text-sm font-medium ${isActive ? 'bg-surface-2 text-ink' : 'text-ink-2 hover:text-ink'}`}>
-                {n.label}
+                className={({ isActive }) => `whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium lg:px-3 ${isActive ? 'bg-surface-2 text-ink' : 'text-ink-2 hover:text-ink'}`}>
+                <span className="xl:hidden">{n.short}</span>
+                <span className="hidden xl:inline">{n.label}</span>
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="hidden text-xs text-muted lg:inline">{email}</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden max-w-48 truncate text-xs text-muted xl:inline">{email}</span>
             <ThemeToggle />
             <button type="button" className="btn btn-sm" onClick={() => supabase.auth.signOut()}>Sign out</button>
           </div>

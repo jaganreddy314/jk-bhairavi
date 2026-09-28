@@ -3,10 +3,9 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { ErrorBox, Loading } from './ui'
 
-/** Magic-link sign-in. Only emails in app_users get past the gate (enforced by RLS too). */
+/** Magic-link sign-in. Which businesses (if any) the person can open is decided by BusinessGate. */
 export function AuthGate({ children }: { children: (session: Session) => ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
-  const [allowed, setAllowed] = useState<boolean | undefined>(undefined)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -14,27 +13,8 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     return () => data.subscription.unsubscribe()
   }, [])
 
-  const email = session?.user.email
-  useEffect(() => {
-    if (!email) return
-    setAllowed(undefined)
-    // app_users is only readable by listed users, so any row back means "allowed".
-    supabase.from('app_users').select('email').limit(1).then(({ data, error }) => setAllowed(!error && (data?.length ?? 0) > 0))
-  }, [email])
-
   if (session === undefined) return <Loading />
   if (!session) return <SignIn />
-  if (allowed === undefined) return <Loading label="Checking access…" />
-  if (!allowed)
-    return (
-      <Centered>
-        <h1 className="text-xl font-bold">No access yet</h1>
-        <p className="mt-2 text-sm text-ink-2">
-          <b>{email}</b> isn’t on the allowed list. Ask the owner to add it to the <code>app_users</code> table.
-        </p>
-        <button className="btn mt-5 w-full" onClick={() => supabase.auth.signOut()}>Sign out</button>
-      </Centered>
-    )
   return <>{children(session)}</>
 }
 

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useBusiness } from '../lib/business'
 
 const icon = (d: string) => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -16,6 +17,23 @@ const NAV: { to: string; label: string; short: string; icon: ReactNode; end?: bo
   { to: '/recurring', label: 'Standard expenses', short: 'Standard', icon: icon('M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5') },
   { to: '/settings', label: 'Settings', short: 'Settings', icon: icon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.8-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.8H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 2.8-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.8 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.8H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1.1z') },
 ]
+
+/** Which business every page is showing. Hidden while there is only one. */
+function BusinessSwitcher() {
+  const { businesses, businessId, setBusinessId } = useBusiness()
+  if (businesses.length < 2)
+    return <span className="hidden truncate text-sm font-medium text-ink-2 sm:inline">{businesses[0]?.name}</span>
+  return (
+    <select
+      aria-label="Business"
+      className="field !w-auto !py-1.5 !text-sm font-semibold"
+      value={businessId}
+      onChange={(e) => setBusinessId(e.target.value)}
+    >
+      {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+    </select>
+  )
+}
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? '')
@@ -38,10 +56,10 @@ export function Layout({ email }: { email?: string }) {
     <div className="min-h-dvh pb-24 md:pb-10">
       <header className="sticky top-0 z-20 border-b border-line bg-page/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2.5">
-          <NavLink to="/" className="flex items-center gap-2 font-bold">
+          <NavLink to="/" className="flex shrink-0 items-center gap-2 font-bold" aria-label="Dashboard">
             <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
-            <span>JK Bhairavi</span>
           </NavLink>
+          <BusinessSwitcher />
           <nav className="hidden flex-1 gap-1 md:flex" aria-label="Main">
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end}

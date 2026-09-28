@@ -1,9 +1,12 @@
 # JK Bhairavi — Sales & Expenses
 
-A small web app for the JK Bhairavi food counter: enter daily takings (EFTPOS, cash, Uber, online) and expenses (food orders, wages, rent, utilities, equipment), and see sales vs expenses vs profit at any time.
+A small web app for tracking a shop's takings and costs: enter daily takings (EFTPOS, cash, Uber, online) and expenses (food orders, wages, rent, utilities, equipment), and see sales vs expenses vs profit at any time.
+
+It holds **more than one business**. Every record belongs to one business, people are given access per business, and a switcher in the header chooses which one you're looking at. Businesses never share data — separate suppliers, staff, partners, costs and figures.
 
 - `web/` — React + Vite + TypeScript + Tailwind, Recharts, TanStack Query, React Router
-- `supabase/schema.sql` — tables, views, row-level security
+- `supabase/schema.sql` — tables, views, row-level security (current schema; run this on a new project)
+- `supabase/migrations/` — changes to apply to a database that already holds data, in order
 - `supabase/seed.sql` — the shop's real data from the old Google Sheet. **Kept out of git** (this repo is public); ask Jagan for a copy.
 
 ## Pages
@@ -15,7 +18,7 @@ A small web app for the JK Bhairavi food counter: enter daily takings (EFTPOS, c
 | **Add expense** `/expenses/new` | Category first. Food needs a supplier. Labour picks a staff member and hours, and the amount is filled in from hours × rate. "Save + add another" keeps the date and category. |
 | **Expenses** `/expenses` | Filter by range, category or supplier. Edit and delete (delete asks for a second tap). |
 | **Standard expenses** `/recurring` | Rent and other repeating costs: set once and they're counted every week, fortnight or month. Pause instead of delete to keep history. |
-| **Settings** `/settings` | Suppliers, staff and hourly rates, partners, setup costs, contributions, and who owes whom between the partners. |
+| **Settings** `/settings` | The business (rename it, who can sign in, add another business), plus suppliers, staff and hourly rates, partners, setup costs, contributions, and who owes whom between the partners. |
 
 ## How the numbers work
 
@@ -25,17 +28,25 @@ A small web app for the JK Bhairavi food counter: enter daily takings (EFTPOS, c
 - Weeks start on Monday. All money is AUD.
 - **Partner balance**: each partner should have put in their ownership % of everything contributed. The difference is what one owes the other.
 
+## Who can see what
+
+- `business_users` lists, per business, the email addresses that may open it. Everything else is enforced by the database: each table only returns rows whose business you belong to, so nobody can reach another business's figures even outside the app.
+- Anyone can request a sign-in link, but an address that isn't in `business_users` lands on a "No access yet" screen and can read nothing.
+- People are added and removed in **Settings → Business**. Anyone with access to a business can add others to it. A business always keeps at least one person.
+- **Add another business** in Settings creates an empty business with you as its only member. Existing data is untouched.
+
 ## Setup
 
 ### 1. Supabase project
 1. Create a project at [supabase.com](https://supabase.com) (Sydney region is closest).
 2. **SQL Editor** → run `supabase/schema.sql`, then `supabase/seed.sql` if you have it.
-3. Allow your emails to sign in (only listed emails can read or write anything):
+3. Create the first business and allow your emails to sign in (from then on, use Settings):
    ```sql
-   insert into app_users(email, display_name) values
-     ('jagan@example.com', 'Jagan'),
-     ('krishna@example.com', 'Krishna');
+   insert into businesses(name) values ('JK Bhairavi');
+   insert into business_users(email, business_id, display_name)
+   select 'jagan@example.com', id, 'Jagan' from businesses where name = 'JK Bhairavi';
    ```
+   (`seed.sql` already creates the business; just add the people.)
 4. **Authentication → URL Configuration**: set *Site URL* to your deployed URL and add `http://localhost:5173` to *Redirect URLs* for local development. (`supabase/config.toml` holds these; `supabase config push` applies them.)
 5. **Project Settings → API**: copy the *Project URL* and the *anon public* key.
 

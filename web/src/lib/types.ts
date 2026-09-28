@@ -1,12 +1,25 @@
 // Row types for the tables and views in supabase/schema.sql.
 // Regenerate with `supabase gen types typescript` once a project is linked, if the schema changes.
 
+export interface Business {
+  id: string
+  name: string
+  created_at?: string
+}
+
+export interface BusinessUser {
+  email: string
+  business_id: string
+  display_name: string | null
+}
+
 export type PaidVia = 'bank' | 'amex' | 'cash' | 'other'
 export type Frequency = 'weekly' | 'fortnightly' | 'monthly'
 export type CategoryCode = 'food' | 'labour' | 'rent' | 'utilities' | 'equipment' | 'other' | 'setup'
 
 export interface SalesDay {
   id: string
+  business_id: string
   sale_date: string
   eftpos: number
   cash: number
@@ -25,6 +38,7 @@ export interface ExpenseCategory {
 
 export interface Supplier {
   id: string
+  business_id: string
   name: string
   default_category: CategoryCode | null
   active: boolean
@@ -32,6 +46,7 @@ export interface Supplier {
 
 export interface Staff {
   id: string
+  business_id: string
   name: string
   hourly_rate: number | null
   active: boolean
@@ -39,6 +54,7 @@ export interface Staff {
 
 export interface Expense {
   id: string
+  business_id: string
   expense_date: string
   category: CategoryCode
   supplier_id: string | null
@@ -52,6 +68,7 @@ export interface Expense {
 /** Row of v_all_expenses: one-off expenses plus computed recurring occurrences. */
 export interface AnyExpense {
   id: string
+  business_id: string
   expense_date: string
   category: CategoryCode
   supplier_id: string | null
@@ -64,6 +81,7 @@ export interface AnyExpense {
 
 export interface RecurringExpense {
   id: string
+  business_id: string
   name: string
   category: CategoryCode
   supplier_id: string | null
@@ -77,12 +95,14 @@ export interface RecurringExpense {
 
 export interface Partner {
   id: string
+  business_id: string
   name: string
   ownership_pct: number
 }
 
 export interface PartnerContribution {
   id: string
+  business_id: string
   partner_id: string
   contributed_on: string | null
   amount: number
@@ -91,6 +111,7 @@ export interface PartnerContribution {
 
 export interface SetupCost {
   id: string
+  business_id: string
   item: string
   amount: number
   incurred_on: string | null

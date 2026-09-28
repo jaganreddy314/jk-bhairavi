@@ -1,9 +1,13 @@
-import type { ReactNode } from 'react'
-import { useContributions, usePartners, useSetupCosts, useStaff, useSuppliers } from '../lib/api'
+import { useState, type ReactNode } from 'react'
+import {
+  useCreateBusiness, useAddPerson, useBusinessUsers, useContributions, usePartners, useRemovePerson,
+  useSaveBusiness, useSetupCosts, useStaff, useSuppliers,
+} from '../lib/api'
+import { useBusiness } from '../lib/business'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { aud, cents } from '../lib/format'
 import { TableEditor } from '../components/TableEditor'
-import { Loading, PageHeader } from '../components/ui'
+import { DeleteButton, ErrorBox, Loading, PageHeader } from '../components/ui'
 
 function Section({ title, hint, children, id }: { title: string; hint?: ReactNode; children: ReactNode; id: string }) {
   return (
@@ -29,12 +33,13 @@ export default function Settings() {
     <div>
       <PageHeader title="Settings" />
       <nav aria-label="Settings sections" className="mb-4 flex flex-wrap gap-1.5">
-        {[['suppliers', 'Suppliers'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
+        {[['business', 'Business'], ['suppliers', 'Suppliers'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="chip">{label}</a>
         ))}
       </nav>
 
       <div className="grid gap-4">
+        <BusinessSection />
         <PartnerSummary />
 
         <Section id="suppliers" title="Suppliers" hint="Untick “Active” to hide a supplier from the pickers without losing its history.">
@@ -102,10 +107,111 @@ export default function Settings() {
         </Section>
 
         <p className="text-xs text-muted">
-          Who can sign in is controlled by the <code>app_users</code> table in Supabase (see the README).
+          Each business keeps its own suppliers, staff, partners and costs. People only see the businesses they’re added to.
         </p>
       </div>
     </div>
+  )
+}
+
+/** Rename this business, manage who can open it, and start another one. */
+function BusinessSection() {
+  // Remount on switch so the name box and half-typed forms belong to the business on screen.
+  const { business } = useBusiness()
+  return <BusinessFields key={business?.id} />
+}
+
+function BusinessFields() {
+  const { business, businesses, setBusinessId } = useBusiness()
+  const people = useBusinessUsers()
+  const saveBusiness = useSaveBusiness()
+  const createBusiness = useCreateBusiness()
+  const addPerson = useAddPerson()
+  const removePerson = useRemovePerson()
+  const [name, setName] = useState(business?.name ?? '')
+  const [email, setEmail] = useState('')
+  const [personName, setPersonName] = useState('')
+  const [newBiz, setNewBiz] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  async function addBusiness(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    try {
+      const created = await createBusiness.mutateAsync(newBiz)
+      setNewBiz('')
+      setAdding(false)
+      setBusinessId(created.id)
+    } catch (err) {
+      setError(err)
+    }
+  }
+
+  return (
+    <Section id="business" title="Business" hint="Everything on the other pages belongs to the business shown in the header.">
+      <ErrorBox error={error || saveBusiness.error || addPerson.error || removePerson.error} />
+
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => { e.preventDefault(); if (business && name.trim()) saveBusiness.mutate({ id: business.id, name: name.trim() }) }}
+      >
+        <div className="min-w-48 flex-1">
+          <label className="label" htmlFor="biz-name">Name</label>
+          <input id="biz-name" className="field" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <button className="btn" disabled={!name.trim() || name.trim() === business?.name || saveBusiness.isPending}>Rename</button>
+      </form>
+
+      <h3 className="mt-5 font-semibold">Who can sign in</h3>
+      <p className="mb-2 text-sm text-muted">Only these addresses can open <b>{business?.name}</b>. Adding someone doesn’t email them — they sign in themselves.</p>
+      {people.isLoading ? <Loading /> : (
+        <ul className="divide-y divide-line">
+          {(people.data ?? []).map((p) => (
+            <li key={p.email} className="flex flex-wrap items-center gap-2 py-2.5">
+              <span className="min-w-0 flex-1 truncate font-medium">{p.email}</span>
+              {p.display_name && <span className="text-sm text-muted">{p.display_name}</span>}
+              <DeleteButton label="Remove" busy={removePerson.isPending} onConfirm={() => removePerson.mutate(p.email)} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="mt-2 flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!email.trim()) return
+          addPerson.mutate({ email, display_name: personName.trim() || null }, { onSuccess: () => { setEmail(''); setPersonName('') } })
+        }}
+      >
+        <div className="min-w-48 flex-1">
+          <label className="label" htmlFor="p-email">Email</label>
+          <input id="p-email" type="email" className="field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="them@example.com" />
+        </div>
+        <div className="w-36">
+          <label className="label" htmlFor="p-name">Name <span className="font-normal text-muted">(optional)</span></label>
+          <input id="p-name" className="field" value={personName} onChange={(e) => setPersonName(e.target.value)} />
+        </div>
+        <button className="btn" disabled={!email.trim() || addPerson.isPending}>Add person</button>
+      </form>
+
+      <h3 className="mt-5 font-semibold">Other businesses</h3>
+      <p className="mb-2 text-sm text-muted">
+        You can open {businesses.length === 1 ? 'one business' : `${businesses.length} businesses`}: {businesses.map((b) => b.name).join(', ')}.
+      </p>
+      {adding ? (
+        <form className="flex flex-wrap items-end gap-2" onSubmit={addBusiness}>
+          <div className="min-w-48 flex-1">
+            <label className="label" htmlFor="new-biz">New business name</label>
+            <input id="new-biz" className="field" value={newBiz} onChange={(e) => setNewBiz(e.target.value)} placeholder="Second shop" autoFocus />
+          </div>
+          <button className="btn btn-primary" disabled={!newBiz.trim() || createBusiness.isPending}>{createBusiness.isPending ? 'Creating…' : 'Create'}</button>
+          <button type="button" className="btn" onClick={() => { setAdding(false); setNewBiz('') }}>Cancel</button>
+        </form>
+      ) : (
+        <button type="button" className="btn btn-sm" onClick={() => setAdding(true)}>+ Add another business</button>
+      )}
+      <p className="mt-2 text-xs text-muted">A new business starts empty, with you as its only member. Switch between businesses in the header.</p>
+    </Section>
   )
 }
 

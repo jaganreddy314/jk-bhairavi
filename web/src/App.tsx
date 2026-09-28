@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthGate, Centered } from './components/Auth'
+import { BusinessGate } from './components/BusinessGate'
 import { Loading } from './components/ui'
 import { Layout } from './components/Layout'
 import { isConfigured } from './lib/supabase'
@@ -35,18 +36,20 @@ export default function App() {
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthGate>
           {(session) => (
-            <Routes>
-              <Route element={<Layout email={session.user.email} />}>
-                <Route index element={<Suspense fallback={<Loading />}><Dashboard /></Suspense>} />
-                <Route path="sales" element={<SalesEntry />} />
-                <Route path="expenses" element={<ExpensesList />} />
-                <Route path="expenses/new" element={<ExpenseForm />} />
-                <Route path="expenses/:id" element={<ExpenseForm />} />
-                <Route path="recurring" element={<Recurring />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
+            <BusinessGate email={session.user.email}>
+              <Routes>
+                <Route element={<Layout email={session.user.email} />}>
+                  <Route index element={<Suspense fallback={<Loading />}><Dashboard /></Suspense>} />
+                  <Route path="sales" element={<SalesEntry />} />
+                  <Route path="expenses" element={<ExpensesList />} />
+                  <Route path="expenses/new" element={<ExpenseForm />} />
+                  <Route path="expenses/:id" element={<ExpenseForm />} />
+                  <Route path="recurring" element={<Recurring />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </BusinessGate>
           )}
         </AuthGate>
       </BrowserRouter>

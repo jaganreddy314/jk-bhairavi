@@ -4,6 +4,7 @@ import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { useAllExpenses, useEarliestSale, useSales, useStaff, useSuppliers } from '../lib/api'
+import { useBusiness } from '../lib/business'
 import { CAT_COLOR, CAT_LABEL, CHANNELS, OPERATING } from '../lib/categories'
 import { addDays, eachDay, fmtDay, fmtLong, fmtShort, weekdayIdx, weekStart, WEEKDAYS } from '../lib/dates'
 import { aud, audRound, audShort, cents, pct } from '../lib/format'
@@ -44,6 +45,9 @@ export default function Dashboard() {
 
 function Body({ from, to, sales, expenses }: { from: string; to: string; sales: SalesDay[]; expenses: AnyExpense[] }) {
   const p = usePalette()
+  // 'simple' businesses record one sales figure plus the cash they collected (fuel included),
+  // so the payment-channel split is replaced by the cash figure.
+  const simple = useBusiness().business?.sales_mode === 'simple'
   const [openCat, setOpenCat] = useState<CategoryCode | null>(null)
 
   const m = useMemo(() => {
@@ -56,7 +60,7 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
     const tradingDays = sales.filter((d) => dayTotal(d) > 0).length
 
     // Weekly roll-up, Monday start, covering every week in the range.
-    const weeks: { week: string; label: string; sales: number; expenses: number; profit: number; profitPlot: number | null; food: number; labour: number; rent: number; utilities: number; other: number; equipment: number; days: number }[] = []
+    const weeks: { week: string; label: string; sales: number; expenses: number; profit: number; profitPlot: number | null; cash: number; food: number; labour: number; rent: number; utilities: number; other: number; equipment: number; days: number }[] = []
     for (let w = weekStart(from); w <= to; w = addDays(w, 7)) {
       const end = addDays(w, 6)
       const s = sales.filter((d) => d.sale_date >= w && d.sale_date <= end)
@@ -64,6 +68,7 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
       const c = (k: CategoryCode) => sum(e.filter((x) => x.category === k), (x) => x.amount)
       const row = {
         week: w, label: fmtShort(w), sales: sum(s, dayTotal), days: s.length,
+        cash: sum(s, (d) => d.cash_collected ?? 0),
         food: c('food'), labour: c('labour'), rent: c('rent'), utilities: c('utilities'), other: c('other'), equipment: c('equipment'),
         expenses: 0, profit: 0, profitPlot: null as number | null,
       }
@@ -78,7 +83,7 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
     const firstDay = sales[0]?.sale_date ?? from
     const daily = eachDay(firstDay > from ? firstDay : from, to).map((d) => {
       const row = byDate.get(d)
-      return { date: d, label: fmtShort(d), total: row ? dayTotal(row) : null, row }
+      return { date: d, label: fmtShort(d), total: row ? dayTotal(row) : null, cash: row?.cash_collected ?? null, row }
     })
 
     const weekday = WEEKDAYS.map((name, i) => {
@@ -94,6 +99,8 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
 
     return {
       totalSales, byCat, opex, equipment, tradingDays, weeks, daily, weekday, channels, unsplitDays,
+      cashCollected: sum(sales, (d) => d.cash_collected ?? 0),
+      cashDays: sales.filter((d) => d.cash_collected != null).length,
       profit: cents(totalSales - opex), food: cat('food'), labour: cat('labour'),
     }
   }, [sales, expenses, from, to])
@@ -140,7 +147,12 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
           sub={m.equipment ? `${audRound(m.profit - m.equipment)} after equipment` : `${pct(m.profit / m.totalSales)} margin`} />
         <Tile label="Food cost" value={pct(m.food / m.totalSales)} sub={`${audRound(m.food)} of sales`} />
         <Tile label="Labour" value={pct(m.labour / m.totalSales)} sub={m.labour ? `${audRound(m.labour)} of sales` : 'no wages entered'} />
-        <Tile label="Avg sales / day" value={audRound(m.tradingDays ? m.totalSales / m.tradingDays : 0)} sub="per trading day" />
+        {simple ? (
+          <Tile label="Cash collected" value={audRound(m.cashCollected)}
+            sub={m.cashDays ? `over ${m.cashDays} day${m.cashDays === 1 ? '' : 's'}, fuel included` : 'none entered'} />
+        ) : (
+          <Tile label="Avg sales / day" value={audRound(m.tradingDays ? m.totalSales / m.tradingDays : 0)} sub="per trading day" />
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">
@@ -192,7 +204,7 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
 
           <details className="mt-3 text-sm">
             <summary className="cursor-pointer text-accent">Show as table</summary>
-            <WeeklyTable weeks={m.weeks} />
+            <WeeklyTable weeks={m.weeks} simple={simple} />
           </details>
         </ChartCard>
 
@@ -224,8 +236,12 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
         </ChartCard>
       </div>
 
-      <ChartCard title="Daily sales" subtitle={m.daily.some((d) => d.row && hasMismatch(d.row)) ? '≠ in the tooltip marks days where the old sheet total differs from the channels' : undefined}
-        legend={<Legend items={[{ label: 'Day total', color: p['c-sales'], line: true }]} />}>
+      <ChartCard title={simple ? 'Daily sales and cash' : 'Daily sales'}
+        subtitle={simple ? 'Cash collected includes fuel money, so it moves independently of sales'
+          : m.daily.some((d) => d.row && hasMismatch(d.row)) ? '≠ in the tooltip marks days where the old sheet total differs from the channels' : undefined}
+        legend={<Legend items={simple
+          ? [{ label: 'Sales', color: p['c-sales'], line: true }, { label: 'Cash collected', color: p['c-cash'], line: true }]
+          : [{ label: 'Day total', color: p['c-sales'], line: true }]} />}>
         <div className="h-60">
           <ResponsiveContainer>
             <LineChart data={m.daily} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -238,14 +254,23 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
                 if (!d.row) return <TipBox title={fmtDay(d.date)} rows={[{ label: 'No sales entered', value: '' }]} />
                 const r = d.row
                 return <TipBox title={fmtDay(d.date)}
-                  rows={[
-                    { label: hasMismatch(r) ? 'Total ≠' : 'Total', value: aud(dayTotal(r)), strong: true },
-                    ...CHANNELS.filter((c) => r[c.key]).map((c) => ({ label: c.label, value: aud(r[c.key]) })),
-                  ]}
+                  rows={simple
+                    ? [
+                        { label: 'Sales', value: aud(dayTotal(r)), color: p['c-sales'], strong: true },
+                        { label: 'Cash collected', value: r.cash_collected == null ? '—' : aud(r.cash_collected), color: p['c-cash'] },
+                      ]
+                    : [
+                        { label: hasMismatch(r) ? 'Total ≠' : 'Total', value: aud(dayTotal(r)), strong: true },
+                        ...CHANNELS.filter((c) => r[c.key]).map((c) => ({ label: c.label, value: aud(r[c.key]) })),
+                      ]}
                   footer={[hasMismatch(r) && `Channels add up to ${aud(splitSum(r))}`, r.notes].filter(Boolean).join(' · ') || undefined} />
               }} />
               <Line dataKey="total" stroke={p['c-sales']} strokeWidth={2} connectNulls={false} isAnimationActive={false}
                 dot={{ r: 4, fill: p['c-sales'], stroke: p.surface, strokeWidth: 2 }} activeDot={{ r: 6, stroke: p.surface, strokeWidth: 2 }} />
+              {simple && (
+                <Line dataKey="cash" stroke={p['c-cash']} strokeWidth={2} connectNulls={false} isAnimationActive={false}
+                  dot={{ r: 4, fill: p['c-cash'], stroke: p.surface, strokeWidth: 2 }} activeDot={{ r: 6, stroke: p.surface, strokeWidth: 2 }} />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -269,6 +294,33 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
           </div>
         </ChartCard>
 
+        {simple ? (
+          <ChartCard title="Cash collected by week" subtitle="Cash in hand, fuel included — not part of sales">
+            {m.cashCollected === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">No cash figures entered for this period.</p>
+            ) : (
+              <>
+                <div className="mb-3 flex items-baseline justify-between">
+                  <span className="text-sm text-ink-2">Total for the period</span>
+                  <span className="num text-2xl font-bold">{aud(m.cashCollected)}</span>
+                </div>
+                <ul className="space-y-2">
+                  {m.weeks.filter((w) => w.cash > 0 || w.sales > 0).map((w) => (
+                    <li key={w.week}>
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="font-medium">Week of {fmtShort(w.week)}</span>
+                        <span className="num"><b>{aud(w.cash)}</b></span>
+                      </div>
+                      <div className="mt-1 h-2 rounded-full bg-surface-2">
+                        <div className="h-2 rounded-full" style={{ width: `${(w.cash / Math.max(...m.weeks.map((x) => x.cash), 1)) * 100}%`, minWidth: w.cash ? 4 : 0, background: 'var(--c-cash)' }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </ChartCard>
+        ) : (
         <ChartCard title="How customers pay" subtitle={m.unsplitDays.length ? `${m.unsplitDays.length} day${m.unsplitDays.length === 1 ? '' : 's'} only have a total, no split` : undefined}>
           <ul className="space-y-3">
             {m.channels.map((c) => (
@@ -284,6 +336,7 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
             ))}
           </ul>
         </ChartCard>
+        )}
       </div>
     </div>
   )
@@ -328,8 +381,10 @@ function CategoryItems({ items }: { items: AnyExpense[] }) {
   )
 }
 
-function WeeklyTable({ weeks }: { weeks: { week: string; days: number; sales: number; food: number; labour: number; rent: number; utilities: number; other: number; expenses: number; profit: number; equipment: number }[] }) {
-  const cols = ['sales', 'food', 'labour', 'rent', 'utilities', 'other', 'expenses', 'profit', 'equipment'] as const
+function WeeklyTable({ weeks, simple }: { weeks: { week: string; days: number; sales: number; cash: number; food: number; labour: number; rent: number; utilities: number; other: number; expenses: number; profit: number; equipment: number }[]; simple: boolean }) {
+  const cols = (simple
+    ? ['sales', 'cash', 'food', 'labour', 'rent', 'utilities', 'other', 'expenses', 'profit', 'equipment']
+    : ['sales', 'food', 'labour', 'rent', 'utilities', 'other', 'expenses', 'profit', 'equipment']) as readonly ('sales' | 'cash' | 'food' | 'labour' | 'rent' | 'utilities' | 'other' | 'expenses' | 'profit' | 'equipment')[]
   return (
     <div className="-mx-4 mt-2 overflow-x-auto px-4">
       <table className="num w-full min-w-[720px] text-right text-xs">

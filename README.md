@@ -14,7 +14,7 @@ It holds **more than one business**. Every record belongs to one business, peopl
 | Page | What it's for |
 |---|---|
 | **Dashboard** `/` | Pick a range (this week / last 4 weeks / this month / all / custom). KPI tiles, weekly sales vs expenses, weekly profit, where the money goes (tap a category for its items), daily sales, average by weekday, payment split, and a warning when a week has sales but no wages or food entered. |
-| **Enter sales** `/sales` | One day at a time (big number inputs for the phone), or a **week grid** that looks like the old sheet. |
+| **Enter sales** `/sales` | One day at a time (big number inputs for the phone), or a **week grid**. The fields depend on the business: card / cash / Uber / online, or total sales + cash collected. |
 | **Add expense** `/expenses/new` | Category first. Food needs a supplier. Labour picks a staff member and hours, and the amount is filled in from hours × rate. "Save + add another" keeps the date and category. |
 | **Expenses** `/expenses` | Filter by range, category or supplier. Edit and delete (delete asks for a second tap). |
 | **Standard expenses** `/recurring` | Rent and other repeating costs: set once and they're counted every week, fortnight or month. Pause instead of delete to keep history. |
@@ -23,6 +23,9 @@ It holds **more than one business**. Every record belongs to one business, peopl
 ## How the numbers work
 
 - **Profit** = sales − (food + labour + rent + utilities + other). **Equipment** is shown separately with an "after equipment" figure. **Setup costs** never touch profit.
+- **Two ways to record a day**, set per business in Settings:
+  - **Card / cash / Uber / online** — the four figures add up to the day's takings (JK Bhairavi).
+  - **Total sales + cash collected** — one sales figure, plus the cash in hand that day (Caltex kedron). At a service station the till also takes fuel money, so **cash collected is never counted as sales**: it's reported on its own tile, its own weekly card and as a second line on the daily chart, and it never touches profit.
 - **Day total** = the total written in the old sheet if there is one, otherwise EFTPOS + cash + Uber + online. When the two disagree the day shows **≠**. Once you edit that day's channel amounts in the app, the app's sum is used from then on.
 - **Standard expenses** are calculated, not stored: a monthly item repeats on the same day each month (31st → last day of short months), up to today (Brisbane time).
 - Weeks start on Monday. All money is AUD.

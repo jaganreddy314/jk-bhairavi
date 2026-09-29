@@ -8,6 +8,10 @@ create extension if not exists pgcrypto;
 create table businesses (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
+  -- How a trading day is recorded:
+  --   'channels' - EFTPOS / cash / Uber / online, added up to the day's takings
+  --   'simple'   - one sales figure, plus cash collected that day
+  sales_mode text not null default 'channels' check (sales_mode in ('channels', 'simple')),
   created_at timestamptz default now()
 );
 
@@ -49,6 +53,9 @@ create table sales_days (
   uber numeric(12,2) not null default 0,
   online numeric(12,2) not null default 0,
   total_recorded numeric(12,2),            -- as written in the old sheet; null = use sum
+  -- Cash in hand that day. NOT part of sales: at a service station the till also
+  -- takes fuel money, which isn't tracked here. Reported on its own.
+  cash_collected numeric(12,2),
   notes text,
   created_by uuid default auth.uid(),
   created_at timestamptz default now(),
@@ -218,6 +225,7 @@ create or replace view v_weekly_summary as
 with s as (
   select business_id, date_trunc('week', sale_date)::date as week_start,
          sum(coalesce(total_recorded, eftpos+cash+uber+online)) as sales,
+         sum(cash_collected) as cash_collected,
          count(*) as trading_days
   from sales_days group by 1, 2
 ), e as (
@@ -233,6 +241,7 @@ with s as (
 select coalesce(s.business_id, e.business_id) as business_id,
   coalesce(s.week_start, e.week_start) as week_start,
   coalesce(sales,0) as sales, coalesce(trading_days,0) as trading_days,
+  coalesce(cash_collected,0) as cash_collected,
   coalesce(food,0) food, coalesce(labour,0) labour, coalesce(rent,0) rent,
   coalesce(utilities,0) utilities, coalesce(equipment,0) equipment, coalesce(other,0) other,
   coalesce(food,0)+coalesce(labour,0)+coalesce(rent,0)+coalesce(utilities,0)+coalesce(other,0) as operating_expenses,

@@ -34,7 +34,7 @@ export const useSales = (from: string, to: string) => {
       money(
         await run(supabase.from('sales_days').select('*').eq('business_id', biz)
           .gte('sale_date', from).lte('sale_date', to).order('sale_date')),
-        ['eftpos', 'cash', 'uber', 'online', 'total_recorded'],
+        ['eftpos', 'cash', 'uber', 'online', 'total_recorded', 'cash_collected'],
       ) as SalesDay[],
   })
 }
@@ -180,8 +180,8 @@ export const useUpsertSales = () => {
 // ---------- businesses & their people ----------
 
 export const useSaveBusiness = () =>
-  useWrite<{ id?: string; name: string }>('businesses', ({ id, name }) =>
-    id ? supabase.from('businesses').update({ name }).eq('id', id) : supabase.from('businesses').insert({ name }).select().single(),
+  useWrite<{ id: string; name?: string; sales_mode?: string }>('businesses', ({ id, ...rest }) =>
+    supabase.from('businesses').update(rest).eq('id', id),
   )
 
 export const useAddPerson = () => {

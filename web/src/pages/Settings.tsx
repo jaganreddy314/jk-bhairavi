@@ -7,7 +7,7 @@ import { useBusiness } from '../lib/business'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { aud, cents } from '../lib/format'
 import { TableEditor } from '../components/TableEditor'
-import { DeleteButton, ErrorBox, Loading, PageHeader } from '../components/ui'
+import { DeleteButton, ErrorBox, Loading, PageHeader, Segmented } from '../components/ui'
 
 function Section({ title, hint, children, id }: { title: string; hint?: ReactNode; children: ReactNode; id: string }) {
   return (
@@ -161,6 +161,23 @@ function BusinessFields() {
         </div>
         <button className="btn" disabled={!name.trim() || name.trim() === business?.name || saveBusiness.isPending}>Rename</button>
       </form>
+
+      <h3 className="mt-5 font-semibold">How a day’s sales are recorded</h3>
+      <p className="mb-2 text-sm text-muted">
+        {business?.sales_mode === 'simple'
+          ? 'Two figures a day: total sales, and the cash collected (fuel money included, never counted as sales).'
+          : 'Four figures a day — card, cash, Uber and online — added up to the day’s takings.'}
+      </p>
+      <Segmented
+        ariaLabel="How a day’s sales are recorded"
+        value={business?.sales_mode ?? 'channels'}
+        onChange={(v) => business && v !== business.sales_mode && saveBusiness.mutate({ id: business.id, sales_mode: v })}
+        options={[
+          { value: 'channels', label: 'Card / cash / Uber / online' },
+          { value: 'simple', label: 'Total sales + cash collected' },
+        ]}
+      />
+      <p className="mt-1.5 text-xs text-muted">Changing this only changes the entry screen. Figures already saved stay as they are.</p>
 
       <h3 className="mt-5 font-semibold">Who can sign in</h3>
       <p className="mb-2 text-sm text-muted">Only these addresses can open <b>{business?.name}</b>. Adding someone doesn’t email them — they sign in themselves.</p>

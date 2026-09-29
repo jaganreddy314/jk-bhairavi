@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 
 // Recharts writes colours into SVG attributes, where CSS var() isn't reliable, so resolve the
 // theme tokens to real colours and re-resolve whenever light/dark changes.
-const TOKENS = ['c-sales', 'c-expenses', 'c-profit', 'ink', 'ink-2', 'muted', 'line', 'axis', 'surface', 'bad'] as const
+const TOKENS = ['c-sales', 'c-cash', 'c-expenses', 'c-profit', 'ink', 'ink-2', 'muted', 'line', 'axis', 'surface', 'bad'] as const
 export type Palette = Record<(typeof TOKENS)[number], string>
 
 function read(): Palette {

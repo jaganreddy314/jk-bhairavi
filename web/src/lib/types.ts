@@ -1,9 +1,13 @@
 // Row types for the tables and views in supabase/schema.sql.
 // Regenerate with `supabase gen types typescript` once a project is linked, if the schema changes.
 
+/** How a business records a trading day. */
+export type SalesMode = 'channels' | 'simple'
+
 export interface Business {
   id: string
   name: string
+  sales_mode: SalesMode
   created_at?: string
 }
 
@@ -26,6 +30,8 @@ export interface SalesDay {
   uber: number
   online: number
   total_recorded: number | null
+  /** Cash in hand that day. Unrelated to sales (a service station till also takes fuel money). */
+  cash_collected: number | null
   notes: string | null
 }
 

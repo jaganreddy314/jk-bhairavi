@@ -20,6 +20,7 @@
   --warn-ink: #6b4a00;
 
   --c-sales: #2a78d6;
+  --c-cash: #86b6ef;   /* cash collected: a lighter step of the sales blue, never a category */
   --c-expenses: #8a8880;
   --c-profit: #0b0b0b;
   --c-food: #eb6834;
@@ -51,6 +52,7 @@
     --warn-ink: #f3d58c;
 
     --c-sales: #3987e5;
+    --c-cash: #1c5cab;
     --c-expenses: #8f8d85;
     --c-profit: #ffffff;
     --c-food: #d95926;
@@ -82,6 +84,7 @@
   --warn-ink: #f3d58c;
 
   --c-sales: #3987e5;
+  --c-cash: #1c5cab;
   --c-expenses: #8f8d85;
   --c-profit: #ffffff;
   --c-food: #d95926;

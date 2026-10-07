@@ -11,9 +11,14 @@ import ExpenseForm from './pages/ExpenseForm'
 import ExpensesList from './pages/ExpensesList'
 import Recurring from './pages/Recurring'
 import Settings from './pages/Settings'
+import Orders from './pages/Orders'
+import OrderForm from './pages/OrderForm'
+import StockCounts from './pages/StockCounts'
+import StockCountSheet from './pages/StockCountSheet'
 
-// Charts are the heaviest code; load them only when the dashboard opens.
+// Charts are the heaviest code; load them only when a page that draws them opens.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const FoodCost = lazy(() => import('./pages/FoodCost'))
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: true, retry: 1 } },
@@ -45,6 +50,12 @@ export default function App() {
                   <Route path="expenses/new" element={<ExpenseForm />} />
                   <Route path="expenses/:id" element={<ExpenseForm />} />
                   <Route path="recurring" element={<Recurring />} />
+                  <Route path="orders" element={<Orders />} />
+                  <Route path="orders/new" element={<OrderForm />} />
+                  <Route path="orders/:id" element={<OrderForm />} />
+                  <Route path="stock" element={<StockCounts />} />
+                  <Route path="stock/:id" element={<StockCountSheet />} />
+                  <Route path="food-cost" element={<Suspense fallback={<Loading />}><FoodCost /></Suspense>} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>

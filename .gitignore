@@ -8,3 +8,6 @@ supabase/.temp/
 # Real business data - kept out of the public repo
 supabase/seed.sql
 HANDOVER.md
+.db-password-qa
+web/.env.qa
+.qa-db-url

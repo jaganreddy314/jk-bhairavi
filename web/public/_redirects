@@ -1,0 +1,4 @@
+# Single-page app: every unmatched path serves the app so deep links like /expenses
+# and /food-cost work when opened directly. Cloudflare Pages reads this file; GitHub
+# Pages ignores it and relies on the 404.html copy the deploy workflow makes instead.
+/*  /index.html  200

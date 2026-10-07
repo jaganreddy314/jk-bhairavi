@@ -102,5 +102,62 @@ Then, in the app:
 2. **Settings → Stock items** — what you buy and count, each with its unit (kg, box, carton…), its section, who you usually buy it from, and roughly what it costs. The cost is only a starting point; once you've received an order the real price takes over.
 3. **Stock counts** — count once to set the opening stock. Food cost needs a second count a week later before it has anything to compare.
 
+## QA environment
+
+There are two Supabase projects and two deployed copies of the app. Nothing is tried on the real figures first.
+
+| | Database | Deployed from | URL |
+|---|---|---|---|
+| **Production** | `jk-bhairavi` (`bistvxnyfmmqzvpbofjf`) | `main` → GitHub Pages | `https://jaganreddy314.github.io/jk-bhairavi/` |
+| **QA** | `jk-bhairavi-qa` (`ipsefruvpdhmkbvztdpf`) | `qa` → Cloudflare Pages | set when the Cloudflare project is created |
+
+Both are in Sydney (`ap-southeast-2`) and hold the same schema. QA holds a copy of the real data, so figures look familiar while testing.
+
+### Working on a change
+
+```
+feature branch  →  qa  →  main
+                   ↓        ↓
+                 QA DB    prod DB
+```
+
+1. Build the change on a branch, with a migration file in `supabase/migrations/` if the database changes.
+2. Merge it into `qa`. Cloudflare rebuilds the QA site automatically.
+3. Apply the migration to QA and test it there: `supabase db push --db-url "$(cat .qa-db-url)"`.
+4. When it's right, merge `qa` into `main`. GitHub Pages rebuilds production.
+5. Apply the same migration to production: `supabase db push` (prod is the linked project).
+
+Steps 3 and 5 run the *same file* through the *same command*, which is the point — QA tests the release, not just the SQL.
+
+### Running against QA locally
+
+`web/.env.qa` holds the QA project's URL and anon key (gitignored, like `.env`):
+
+```bash
+cd web
+npm run dev -- --mode qa      # localhost:5173 against the QA database
+npm run build -- --mode qa    # a QA bundle
+```
+
+Without `--mode qa` both commands use `.env`, which points at production. The deployed builds don't use these files at all — GitHub Actions and Cloudflare each inject their own variables.
+
+### Refreshing QA from production
+
+QA drifts as you test. To reset it to whatever production currently holds:
+
+```bash
+pg_dump "$PROD_URL" --data-only --schema=public --no-owner --no-privileges -f /tmp/prod-data.sql
+psql "$QA_URL" -c 'truncate businesses, business_users, sales_days, expenses, suppliers, staff,
+  recurring_expenses, partners, partner_contributions, setup_costs, expense_categories,
+  stock_groups, stock_items, purchase_orders, purchase_order_lines, stock_counts, stock_count_lines cascade'
+psql "$QA_URL" --single-transaction -f /tmp/prod-data.sql
+```
+
+`pg_dump` must be **version 17 or newer** — both projects run Postgres 17, and pg_dump refuses to dump from a server newer than itself. On this machine that's `/opt/homebrew/opt/postgresql@17/bin`. Only the `public` schema is copied, so no auth users move between projects; people sign in to QA with the same magic-link addresses because access is decided by `business_users`, which is copied.
+
+### Free tier
+
+Both projects are on the free plan, which allows two active projects and pauses a project after about a week of no use. QA will often need waking from its dashboard before a test session, which takes a minute or two. Prod stays awake because it's in daily use.
+
 ## Still to confirm
 The open questions about the imported sheet data (the unlabelled Monday column, undated Amex items, how often rent is paid, the shop purchase figure) are listed in the private handover notes. The dashboard warns about every week with no wages until they're entered.

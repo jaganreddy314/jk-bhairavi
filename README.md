@@ -109,9 +109,13 @@ There are two Supabase projects and two deployed copies of the app. Nothing is t
 | | Database | Deployed from | URL |
 |---|---|---|---|
 | **Production** | `jk-bhairavi` (`bistvxnyfmmqzvpbofjf`) | `main` → GitHub Pages | `https://jaganreddy314.github.io/jk-bhairavi/` |
-| **QA** | `jk-bhairavi-qa` (`ipsefruvpdhmkbvztdpf`) | `qa` → Cloudflare Pages | set when the Cloudflare project is created |
+| **QA** | `jk-bhairavi-qa` (`ipsefruvpdhmkbvztdpf`) | `qa` → Cloudflare Workers | `https://jk-bhairavi.jaganreddy314.workers.dev/` |
 
-Both are in Sydney (`ap-southeast-2`) and hold the same schema. QA holds a copy of the real data, so figures look familiar while testing.
+Both databases are in Sydney (`ap-southeast-2`) and hold the same schema. QA holds a copy of the real data, so figures look familiar while testing.
+
+The QA site is a Cloudflare Worker with the repo connected in the Cloudflare dashboard: it rebuilds on every push to `qa`. Its build settings live in that dashboard, not in this repo — root directory `web`, build command `npm run build`, output `dist`, and the two `VITE_SUPABASE_*` variables pointing at the QA project. `BASE_PATH` is deliberately left unset there, so assets stay root-relative; GitHub Pages sets it to `/jk-bhairavi/` because it serves from a sub-path.
+
+Cloudflare builds on a *push*, so changing a build variable alone doesn't republish — the next commit to `qa` picks it up, or use "Retry deployment" in the dashboard.
 
 ### Working on a change
 
@@ -140,6 +144,25 @@ npm run build -- --mode qa    # a QA bundle
 ```
 
 Without `--mode qa` both commands use `.env`, which points at production. The deployed builds don't use these files at all — GitHub Actions and Cloudflare each inject their own variables.
+
+### Signing in to each copy
+
+The app asks for the magic link to come back to wherever it is running
+(`emailRedirectTo: window.location.origin + BASE_URL`). **Supabase only honours that
+if the address is in the project's redirect allow-list** — otherwise it quietly ignores
+it and sends you to that project's *Site URL* instead. A QA sign-in landing on the
+production site is this and nothing else.
+
+So each Supabase project lists its own site, under Authentication → URL Configuration:
+
+| Project | Site URL | Also allowed |
+|---|---|---|
+| `jk-bhairavi` (prod) | `https://jaganreddy314.github.io/jk-bhairavi/` | `http://localhost:5173` |
+| `jk-bhairavi-qa` | `https://jk-bhairavi.jaganreddy314.workers.dev` | `http://localhost:5173` |
+
+`supabase/config.toml` holds **production's** URLs. Running `supabase config push
+--project-ref ipsefruvpdhmkbvztdpf` would therefore overwrite QA's with production's and
+bring the wrong-redirect problem straight back; QA's auth URLs are set in its dashboard.
 
 ### Refreshing QA from production
 

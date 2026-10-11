@@ -155,7 +155,28 @@ Deep links work because `web/wrangler.jsonc` marks the site as a single-page app
 the assets have already uploaded. GitHub Pages has no such file either — its workflow copies
 `index.html` to `404.html` instead.
 
-A build can also be published by hand, which is useful when the dashboard build is unhappy:
+Deploys run from GitHub Actions (`.github/workflows/deploy-qa.yml`), not from Cloudflare's
+own Git integration: every push to `qa`, a merge included, builds against the QA database
+and publishes the worker. It needs four things under **Settings → Secrets and variables →
+Actions**:
+
+| | Kind | What |
+|---|---|---|
+| `VITE_SUPABASE_URL_QA` | variable | the QA project's URL |
+| `VITE_SUPABASE_ANON_KEY_QA` | variable | its anon key (public by design) |
+| `CLOUDFLARE_ACCOUNT_ID` | secret | the account the worker lives in |
+| `CLOUDFLARE_API_TOKEN` | secret | a token with **Workers Scripts → Edit** |
+
+The job refuses to publish before it builds if any are missing, or if the URL isn't the QA
+project — a QA site wired to the real database would write test orders into the shop's
+actual books. Run it from the Actions tab (**Run workflow**) after changing a variable,
+since a variable change alone doesn't trigger anything.
+
+If Cloudflare's dashboard Git integration is also connected, disconnect it or leave its
+production branch as something other than `qa`; two systems publishing the same worker will
+race, and the last to finish wins.
+
+A build can also be published by hand, which is useful when the Action is blocked:
 
 ```bash
 cd web

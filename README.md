@@ -147,7 +147,21 @@ There are two Supabase projects and two deployed copies of the app. Nothing is t
 
 Both databases are in Sydney (`ap-southeast-2`) and hold the same schema. QA holds a copy of the real data, so figures look familiar while testing.
 
-The QA site is a Cloudflare Worker with the repo connected in the Cloudflare dashboard: it rebuilds on every push to `qa`. Its build settings live in that dashboard, not in this repo — root directory `web`, build command `npm run build`, output `dist`, and the two `VITE_SUPABASE_*` variables pointing at the QA project. `BASE_PATH` is deliberately left unset there, so assets stay root-relative; GitHub Pages sets it to `/jk-bhairavi/` because it serves from a sub-path.
+The QA site is a Cloudflare Worker with the repo connected in the Cloudflare dashboard: it rebuilds on every push to `qa` (the Worker's *production branch* has to be set to `qa` for that — a push to any other branch is refused before the build starts). Its build settings live in that dashboard, not in this repo — root directory `web`, build command `npm run build`, output `dist`, and the two `VITE_SUPABASE_*` variables pointing at the QA project. `BASE_PATH` is deliberately left unset there, so assets stay root-relative; GitHub Pages sets it to `/jk-bhairavi/` because it serves from a sub-path.
+
+Deep links work because `web/wrangler.jsonc` marks the site as a single-page app. Don't add a
+`_redirects` file for this: that is a Pages feature, and on a Worker the usual
+`/* /index.html 200` rule is rejected outright as an infinite loop, failing the deploy after
+the assets have already uploaded. GitHub Pages has no such file either — its workflow copies
+`index.html` to `404.html` instead.
+
+A build can also be published by hand, which is useful when the dashboard build is unhappy:
+
+```bash
+cd web
+npm run build -- --mode qa   # QA database, from web/.env.qa
+npx wrangler deploy          # needs `npx wrangler login` once
+```
 
 Cloudflare builds on a *push*, so changing a build variable alone doesn't republish — the next commit to `qa` picks it up, or use "Retry deployment" in the dashboard.
 

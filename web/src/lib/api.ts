@@ -377,3 +377,46 @@ export const useSaveCountLines = () => {
     onSuccess: () => ['stock_count_lines', 'stock_counts', 'food_cost'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   })
 }
+
+// ---------- passwords ----------
+
+/**
+ * Change your own password. Nothing privileged about it — the session being changed is
+ * the one making the request.
+ */
+export const useChangeMyPassword = () =>
+  useMutation({
+    mutationFn: async (password: string) => {
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw new Error(error.message)
+    },
+  })
+
+/**
+ * Set someone else's password, so a person can be given access without waiting on an
+ * email. Only an Edge Function can do this: it needs the service-role key, which must
+ * never reach a browser. The function checks that you and they share a business before
+ * it will act, and creates their login if they've been added in Settings but have never
+ * signed in.
+ */
+export const useSetPersonPassword = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      const { data, error } = await supabase.functions.invoke<{ ok: boolean; created: boolean }>('set-password', {
+        body: { email, password },
+      })
+      // A refused call arrives as a FunctionsHttpError with the reason in the response body.
+      if (error) {
+        let message = error.message
+        const res = (error as { context?: Response }).context
+        if (res && typeof res.json === 'function') {
+          try { message = (await res.json())?.error ?? message } catch { /* keep the original */ }
+        }
+        throw new Error(message)
+      }
+      return data!
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['business_users'] }),
+  })
+}

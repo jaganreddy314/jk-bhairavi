@@ -48,6 +48,40 @@ It holds **more than one business**. Every record belongs to one business, peopl
 
 ## Who can see what
 
+### Signing in
+
+People sign in with their **email and a password**. Signing in lasts: the session is kept
+in that device's own storage and renews itself in the background, so the shop's phone
+stays signed in indefinitely — nobody has to log in again before entering a day's takings.
+Signing out is the only thing that ends it.
+
+A new person is given access in two steps, with no email round-trip:
+
+1. **Settings → Business → Who can sign in** — add their address.
+2. **Set password** beside their name — type one and tell them. They can change it
+   themselves under **Settings → Your password**.
+
+Setting someone else's password needs the service-role key, which must never reach a
+browser, so it runs in the `set-password` Edge Function. The function decides whether the
+caller is allowed by reading `business_users` *as them*: row-level security means the query
+can only return businesses the caller belongs to, so a row coming back proves the two share
+one. It creates the login if the person has been added but has never signed in.
+
+```bash
+supabase functions deploy set-password --use-api --project-ref <ref>   # per project
+```
+
+Two ways in remain if a password is forgotten: **Forgot your password?** sends a reset
+link, and **Email me a sign-in link instead** is the old magic link, kept so nobody is
+locked out of the till at closing time. Both only work for an address that has already
+been added, and both need that project's redirect URLs set correctly — see
+*Signing in to each copy*.
+
+Taking someone out of `business_users` stops them seeing anything immediately, because
+every query is filtered by it, but it does not end a session they already hold: they land
+on "No access yet". To cut a device off outright, delete the person in the Supabase
+dashboard under Authentication → Users.
+
 - `business_users` lists, per business, the email addresses that may open it. Order and count *lines* get their business from their parent order or count through a database trigger, not from the browser, so lines can't be hung off another business's records. Everything else is enforced by the database: each table only returns rows whose business you belong to, so nobody can reach another business's figures even outside the app.
 - Anyone can request a sign-in link, but an address that isn't in `business_users` lands on a "No access yet" screen and can read nothing.
 - People are added and removed in **Settings → Business**. Anyone with access to a business can add others to it. A business always keeps at least one person.

@@ -123,3 +123,109 @@ export interface SetupCost {
   incurred_on: string | null
   note: string | null
 }
+
+// ---------- purchasing & stock ----------
+
+export type PoStatus = 'draft' | 'sent' | 'received' | 'cancelled'
+export type StockCountStatus = 'open' | 'final'
+
+/** A section of the count sheet, in the order you walk the shop. */
+export interface StockGroup {
+  id: string
+  business_id: string
+  name: string
+  sort: number
+}
+
+export interface StockItem {
+  id: string
+  business_id: string
+  name: string
+  /** How you order and count it: kg, box, bag, ea, L… */
+  unit: string
+  group_id: string | null
+  supplier_id: string | null
+  /** Fallback cost per unit; the last price paid wins when there is one. */
+  unit_cost: number | null
+  active: boolean
+}
+
+export interface PurchaseOrder {
+  id: string
+  business_id: string
+  po_number: number
+  supplier_id: string
+  status: PoStatus
+  ordered_on: string
+  expected_on: string | null
+  received_on: string | null
+  /** The food expense this order became when it was received. */
+  expense_id: string | null
+  note: string | null
+}
+
+/** Row of v_purchase_order_totals: an order with its line count and value. */
+export interface PurchaseOrderTotal extends Omit<PurchaseOrder, 'id'> {
+  id: string
+  line_count: number
+  total: number
+}
+
+export interface PurchaseOrderLine {
+  id: string
+  purchase_order_id: string
+  business_id: string
+  item_id: string | null
+  /** Used instead of an item for something bought once. */
+  description: string | null
+  qty: number
+  unit_cost: number
+  sort: number
+}
+
+export interface StockCount {
+  id: string
+  business_id: string
+  /** Stock on hand at close of trade on this date. */
+  count_date: string
+  status: StockCountStatus
+  note: string | null
+}
+
+/** Row of v_stock_count_values: a count with how much stock it found. */
+export interface StockCountValue extends StockCount {
+  items_counted: number
+  value: number
+}
+
+export interface StockCountLine {
+  id: string
+  stock_count_id: string
+  business_id: string
+  item_id: string
+  qty: number
+  /** Frozen when the sheet was started, so a later price change can't move a past week. */
+  unit_cost: number
+}
+
+/** Row of v_weekly_food_cost: opening stock + purchases − closing stock, per week. */
+export interface WeeklyFoodCost {
+  business_id: string
+  week_start: string
+  sales: number
+  purchases: number
+  opening_date: string | null
+  closing_date: string | null
+  opening_value: number
+  closing_value: number
+  /** False when the week has no count at either end: food_cost is purchases only. */
+  counted: boolean
+  food_cost: number
+}
+
+/** Row of v_item_cost: what an item costs now. */
+export interface ItemCost {
+  item_id: string
+  business_id: string
+  unit_cost: number
+}

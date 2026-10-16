@@ -1,0 +1,24 @@
+{
+  // Cloudflare Workers config for the QA copy of the app.
+  //
+  // The repo is connected in the Cloudflare dashboard, which runs `npm run build`
+  // from this directory and then `wrangler deploy`. This file is what that deploy
+  // reads: without it there is nothing to tell wrangler the worker's name or where
+  // the built site is, and the build fails after compiling successfully.
+  //
+  // The build settings themselves (root directory, build command, and the
+  // VITE_SUPABASE_* variables that pick the database) live in the dashboard, not here.
+  // Must stay "jk-bhairavi": it is what the deployment updates, and what gives the
+  // site its address, jk-bhairavi.<account>.workers.dev. Renaming it publishes a
+  // second, separate worker instead.
+  "name": "jk-bhairavi",
+  "compatibility_date": "2026-10-01",
+
+  // A site with no server side: wrangler uploads the built files and serves them.
+  "assets": {
+    "directory": "./dist",
+    // Every unmatched path serves index.html, so opening /food-cost or /orders
+    // directly works instead of 404ing. React Router takes it from there.
+    "not_found_handling": "single-page-application"
+  }
+}

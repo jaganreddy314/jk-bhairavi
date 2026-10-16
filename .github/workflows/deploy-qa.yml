@@ -1,0 +1,91 @@
+# QA: every push to the qa branch — a merge included — rebuilds the app against the
+# QA database and publishes it to the Cloudflare Worker.
+#
+# Production is a separate workflow (deploy.yml): main -> GitHub Pages -> the real
+# figures. Nothing here touches it.
+name: Deploy QA to Cloudflare
+
+on:
+  push:
+    branches: [qa]
+  # Lets you republish the current qa branch from the Actions tab without a new commit,
+  # which is what you want after changing one of the variables below.
+  workflow_dispatch:
+
+# Two merges in quick succession shouldn't race to publish; the later one wins.
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: qa
+      url: https://jk-bhairavi.jaganreddy314.workers.dev
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The same file Cloudflare reads, so the two can't drift.
+          node-version-file: web/.node-version
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      # Vite bakes these into the bundle at build time. An empty value still compiles,
+      # and the result is a site that greets everyone with the setup screen — so stop
+      # here instead, where the reason is obvious.
+      - name: Check the QA settings are present and really are QA
+        env:
+          URL: ${{ vars.VITE_SUPABASE_URL_QA }}
+          KEY: ${{ vars.VITE_SUPABASE_ANON_KEY_QA }}
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=
+          [ -n "$URL" ] || missing="$missing VITE_SUPABASE_URL_QA(variable)"
+          [ -n "$KEY" ] || missing="$missing VITE_SUPABASE_ANON_KEY_QA(variable)"
+          [ -n "$ACCOUNT" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID(secret)"
+          # Checked here rather than left to wrangler, whose own failure for a missing
+          # token is a wall of API output that doesn't say which setting is absent.
+          [ -n "$TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN(secret)"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing:$missing. Settings → Secrets and variables → Actions. A Cloudflare token needs the Workers Scripts → Edit permission."
+            exit 1
+          fi
+          # The one mistake worth refusing outright: a QA site wired to the real
+          # database, where a test order would write to the shop's actual books.
+          case "$URL" in
+            https://ipsefruvpdhmkbvztdpf.supabase.co*) ;;
+            *) echo "::error::VITE_SUPABASE_URL_QA is not the QA project ($URL). Refusing to publish QA against another database."; exit 1 ;;
+          esac
+
+      - name: Build against the QA database
+        run: npm run build
+        env:
+          # BASE_PATH is deliberately unset: the worker serves from the root, where
+          # GitHub Pages serves production from /jk-bhairavi/.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL_QA }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY_QA }}
+
+      # Worker name, assets folder and single-page-app routing all come from
+      # web/wrangler.jsonc, so this needs no arguments.
+      - name: Publish to the worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Say what was published
+        run: |
+          echo "### QA deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- <https://jk-bhairavi.jaganreddy314.workers.dev>" >> "$GITHUB_STEP_SUMMARY"
+          echo "- commit \`${GITHUB_SHA::7}\` on \`${GITHUB_REF_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- database: QA (\`ipsefruvpdhmkbvztdpf\`)" >> "$GITHUB_STEP_SUMMARY"

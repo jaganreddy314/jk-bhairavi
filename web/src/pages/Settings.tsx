@@ -1,13 +1,14 @@
 import { useState, type ReactNode } from 'react'
 import {
-  useCreateBusiness, useAddPerson, useBusinessUsers, useContributions, usePartners, useRemovePerson,
-  useSaveBusiness, useSetupCosts, useStaff, useSuppliers,
+  useChangeMyPassword, useCreateBusiness, useAddPerson, useBusinessUsers, useContributions, usePartners,
+  useRemovePerson, useSaveBusiness, useSetPersonPassword, useSetupCosts, useStaff, useStockGroups,
+  useStockItems, useSuppliers,
 } from '../lib/api'
 import { useBusiness } from '../lib/business'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { aud, cents } from '../lib/format'
 import { TableEditor } from '../components/TableEditor'
-import { DeleteButton, ErrorBox, Loading, PageHeader, Segmented } from '../components/ui'
+import { DeleteButton, ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
 
 function Section({ title, hint, children, id }: { title: string; hint?: ReactNode; children: ReactNode; id: string }) {
   return (
@@ -21,25 +22,46 @@ function Section({ title, hint, children, id }: { title: string; hint?: ReactNod
 
 const CATEGORY_OPTIONS = ENTRY_CATEGORIES.map((c) => ({ value: c, label: CAT_LABEL[c] }))
 
+/** How stock is bought and counted. Free-form would make the count sheet read inconsistently. */
+const UNIT_OPTIONS = [
+  { value: 'ea', label: 'each' },
+  { value: 'kg', label: 'kg' },
+  { value: 'g', label: 'g' },
+  { value: 'L', label: 'litre' },
+  { value: 'mL', label: 'mL' },
+  { value: 'box', label: 'box' },
+  { value: 'bag', label: 'bag' },
+  { value: 'carton', label: 'carton' },
+  { value: 'tray', label: 'tray' },
+  { value: 'pkt', label: 'packet' },
+  { value: 'tub', label: 'tub' },
+  { value: 'bottle', label: 'bottle' },
+]
+
 export default function Settings() {
   const suppliers = useSuppliers()
   const staff = useStaff()
   const partners = usePartners()
   const contributions = useContributions()
   const setup = useSetupCosts()
+  const groups = useStockGroups()
+  const items = useStockItems()
   const partnerOptions = (partners.data ?? []).map((p) => ({ value: p.id, label: p.name }))
+  const groupOptions = (groups.data ?? []).map((g) => ({ value: g.id, label: g.name }))
+  const supplierOptions = (suppliers.data ?? []).filter((s) => s.active).map((s) => ({ value: s.id, label: s.name }))
 
   return (
     <div>
       <PageHeader title="Settings" />
       <nav aria-label="Settings sections" className="mb-4 flex flex-wrap gap-1.5">
-        {[['business', 'Business'], ['suppliers', 'Suppliers'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
+        {[['business', 'Business'], ['password', 'Your password'], ['suppliers', 'Suppliers'], ['items', 'Stock items'], ['sections', 'Sections'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="chip">{label}</a>
         ))}
       </nav>
 
       <div className="grid gap-4">
         <BusinessSection />
+        <MyPasswordSection />
         <PartnerSummary />
 
         <Section id="suppliers" title="Suppliers" hint="Untick “Active” to hide a supplier from the pickers without losing its history.">
@@ -50,6 +72,38 @@ export default function Settings() {
                 { key: 'name', label: 'Name', type: 'text', required: true },
                 { key: 'default_category', label: 'Usually', type: 'select', options: CATEGORY_OPTIONS, width: 'md:w-40' },
                 { key: 'active', label: 'Active', type: 'bool', width: 'md:w-16' },
+              ]} />
+          )}
+        </Section>
+
+        <Section id="items" title="Stock items"
+          hint="The things you buy and count. These are what you pick from when raising an order, and what the weekly count sheet asks for. Untick “Active” to drop an item off both without losing its history.">
+          {items.isLoading || groups.isLoading || suppliers.isLoading ? <Loading /> : (
+            <TableEditor table="stock_items" rows={items.data ?? []} addLabel="Add stock item" canDelete={false}
+              defaults={{ unit: 'ea', active: true }}
+              fields={[
+                { key: 'name', label: 'Item', type: 'text', required: true },
+                { key: 'unit', label: 'Unit', type: 'select', required: true, options: UNIT_OPTIONS, width: 'md:w-24' },
+                { key: 'group_id', label: 'Section', type: 'select', options: groupOptions, width: 'md:w-36' },
+                { key: 'supplier_id', label: 'Usually from', type: 'select', options: supplierOptions, width: 'md:w-40' },
+                { key: 'unit_cost', label: 'Cost per unit', type: 'money', width: 'md:w-28 md:text-right' },
+                { key: 'active', label: 'Active', type: 'bool', width: 'md:w-16' },
+              ]} />
+          )}
+          <p className="mt-3 text-xs text-muted">
+            The cost here is a fallback. Once you've received an order for an item, the price you actually paid is what the
+            count sheet values it at.
+          </p>
+        </Section>
+
+        <Section id="sections" title="Count sheet sections"
+          hint="Where stock lives — cool room, freezer, dry store. The count sheet is laid out in this order, so you can walk the shop once. Lowest number first.">
+          {groups.isLoading ? <Loading /> : (
+            <TableEditor table="stock_groups" rows={groups.data ?? []} addLabel="Add section"
+              defaults={{ sort: ((groups.data ?? []).reduce((m, g) => Math.max(m, g.sort), 0) + 10) }}
+              fields={[
+                { key: 'name', label: 'Section', type: 'text', required: true },
+                { key: 'sort', label: 'Order', type: 'number', width: 'md:w-20 md:text-right' },
               ]} />
           )}
         </Section>
@@ -107,7 +161,7 @@ export default function Settings() {
         </Section>
 
         <p className="text-xs text-muted">
-          Each business keeps its own suppliers, staff, partners and costs. People only see the businesses they’re added to.
+          Each business keeps its own suppliers, stock items, staff, partners and costs. People only see the businesses they’re added to.
         </p>
       </div>
     </div>
@@ -127,7 +181,6 @@ function BusinessFields() {
   const saveBusiness = useSaveBusiness()
   const createBusiness = useCreateBusiness()
   const addPerson = useAddPerson()
-  const removePerson = useRemovePerson()
   const [name, setName] = useState(business?.name ?? '')
   const [email, setEmail] = useState('')
   const [personName, setPersonName] = useState('')
@@ -149,7 +202,7 @@ function BusinessFields() {
 
   return (
     <Section id="business" title="Business" hint="Everything on the other pages belongs to the business shown in the header.">
-      <ErrorBox error={error || saveBusiness.error || addPerson.error || removePerson.error} />
+      <ErrorBox error={error || saveBusiness.error || addPerson.error} />
 
       <form
         className="flex flex-wrap items-end gap-2"
@@ -180,16 +233,13 @@ function BusinessFields() {
       <p className="mt-1.5 text-xs text-muted">Changing this only changes the entry screen. Figures already saved stay as they are.</p>
 
       <h3 className="mt-5 font-semibold">Who can sign in</h3>
-      <p className="mb-2 text-sm text-muted">Only these addresses can open <b>{business?.name}</b>. Adding someone doesn’t email them — they sign in themselves.</p>
+      <p className="mb-2 text-sm text-muted">
+        Only these addresses can open <b>{business?.name}</b>. Add someone, set them a password, and tell them —
+        they can change it themselves once they're in.
+      </p>
       {people.isLoading ? <Loading /> : (
         <ul className="divide-y divide-line">
-          {(people.data ?? []).map((p) => (
-            <li key={p.email} className="flex flex-wrap items-center gap-2 py-2.5">
-              <span className="min-w-0 flex-1 truncate font-medium">{p.email}</span>
-              {p.display_name && <span className="text-sm text-muted">{p.display_name}</span>}
-              <DeleteButton label="Remove" busy={removePerson.isPending} onConfirm={() => removePerson.mutate(p.email)} />
-            </li>
-          ))}
+          {(people.data ?? []).map((p) => <PersonRow key={p.email} email={p.email} displayName={p.display_name} />)}
         </ul>
       )}
       <form
@@ -228,6 +278,112 @@ function BusinessFields() {
         <button type="button" className="btn btn-sm" onClick={() => setAdding(true)}>+ Add another business</button>
       )}
       <p className="mt-2 text-xs text-muted">A new business starts empty, with you as its only member. Switch between businesses in the header.</p>
+    </Section>
+  )
+}
+
+/**
+ * One person who can sign in: their address, and the two things an owner needs to do —
+ * give them a password, or take their access away.
+ */
+function PersonRow({ email, displayName }: { email: string; displayName: string | null }) {
+  const removePerson = useRemovePerson()
+  const setPassword = useSetPersonPassword()
+  const [open, setOpen] = useState(false)
+  const [pw, setPw] = useState('')
+  const [done, setDone] = useState<'set' | 'created' | null>(null)
+  const tooShort = pw.length > 0 && pw.length < 8
+
+  return (
+    <li className="py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium">{email}</span>
+        {displayName && <span className="text-sm text-muted">{displayName}</span>}
+        <button type="button" className="btn btn-sm" onClick={() => { setOpen((v) => !v); setDone(null) }}>
+          {open ? 'Cancel' : 'Set password'}
+        </button>
+        <DeleteButton label="Remove" busy={removePerson.isPending} onConfirm={() => removePerson.mutate(email)} />
+      </div>
+
+      <ErrorBox error={removePerson.error || setPassword.error} />
+
+      {done && (
+        <p className="mt-1 text-sm font-semibold text-good">
+          ✓ {done === 'created' ? 'Login created.' : 'Password changed.'} Tell {displayName || email} what it is — they can
+          change it themselves in Settings.
+        </p>
+      )}
+
+      {open && (
+        <form
+          className="mt-2 flex flex-wrap items-end gap-2 rounded-xl bg-surface-2 p-3"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (pw.length < 8) return
+            const r = await setPassword.mutateAsync({ email, password: pw })
+            setPw('')
+            setOpen(false)
+            setDone(r.created ? 'created' : 'set')
+          }}
+        >
+          <div className="min-w-48 flex-1">
+            <label className="label" htmlFor={`pw-${email}`}>New password for {displayName || email}</label>
+            <input id={`pw-${email}`} type="text" className="field" value={pw} onChange={(e) => setPw(e.target.value)}
+              placeholder="At least 8 characters" autoComplete="off" autoFocus />
+            <p className="mt-1 text-xs text-muted">
+              Shown as you type, because you have to pass it on. They can change it once they're signed in.
+            </p>
+          </div>
+          <button className="btn btn-primary" disabled={tooShort || !pw || setPassword.isPending}>
+            {setPassword.isPending ? 'Saving…' : 'Set it'}
+          </button>
+        </form>
+      )}
+      {open && tooShort && <p className="mt-1 text-xs text-bad">A bit longer — 8 characters or more.</p>}
+    </li>
+  )
+}
+
+/** Your own password. Changing it doesn't sign you out of this device. */
+function MyPasswordSection() {
+  const change = useChangeMyPassword()
+  const [pw, setPw] = useState('')
+  const [again, setAgain] = useState('')
+  const [saved, setSaved] = useState(0)
+  const tooShort = pw.length > 0 && pw.length < 8
+  const mismatch = again.length > 0 && again !== pw
+
+  return (
+    <Section id="password" title="Your password" hint="Signing in keeps you signed in on this device until you sign out.">
+      <ErrorBox error={change.error} />
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (!pw || tooShort || mismatch) return
+          await change.mutateAsync(pw)
+          setPw('')
+          setAgain('')
+          setSaved(Date.now())
+        }}
+      >
+        <div className="min-w-44 flex-1">
+          <label className="label" htmlFor="my-pw">New password</label>
+          <input id="my-pw" type="password" className="field" autoComplete="new-password" value={pw}
+            onChange={(e) => setPw(e.target.value)} />
+        </div>
+        <div className="min-w-44 flex-1">
+          <label className="label" htmlFor="my-pw2">Again</label>
+          <input id="my-pw2" type="password" className="field" autoComplete="new-password" value={again}
+            onChange={(e) => setAgain(e.target.value)} />
+        </div>
+        <button className="btn" disabled={!pw || tooShort || mismatch || change.isPending}>
+          {change.isPending ? 'Saving…' : 'Change password'}
+        </button>
+        <span className="self-center"><Flash signal={saved}>Password changed</Flash></span>
+      </form>
+      {tooShort && <p className="mt-1 text-xs text-bad">A bit longer — 8 characters or more.</p>}
+      {mismatch && <p className="mt-1 text-xs text-bad">These two don't match.</p>}
     </Section>
   )
 }

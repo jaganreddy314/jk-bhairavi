@@ -5,7 +5,9 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
+  ItemAlias, ItemSale, ItemSalesWeek,
 } from './types'
+import { codeKey, normalise } from './report'
 
 // PostgREST can return numeric columns as strings; coerce the money fields we use.
 const num = (v: unknown) => (v == null ? null : Number(v))
@@ -147,6 +149,8 @@ const DEPENDENTS: Record<string, string[]> = {
   // A line changes the order's total, and receiving reprices future sheets.
   purchase_order_lines: ['order_lines', 'purchase_orders', 'item_costs'],
   stock_counts: ['stock_counts', 'stock_count', 'food_cost'],
+  // A new product can be added from an import, and its sales go with it.
+  item_sales: ['item_sales'],
   stock_count_lines: ['stock_count_lines', 'stock_counts', 'food_cost'],
 }
 
@@ -327,6 +331,98 @@ export const useWeeklyFoodCost = (fromWeek: string, to: string) => {
           .gte('week_start', fromWeek).lte('week_start', to).order('week_start')),
         ['sales', 'purchases', 'opening_value', 'closing_value', 'food_cost'],
       ) as WeeklyFoodCost[],
+  })
+}
+
+// ---------- item sales ----------
+
+/** Each item's sales per week, for weeks starting fromWeek to `to`. */
+export const useItemSalesWeekly = (fromWeek: string, to: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['item_sales', 'weekly', biz, fromWeek, to],
+    queryFn: async () =>
+      money(
+        await run(supabase.from('v_item_sales_weekly').select('*').eq('business_id', biz)
+          .gte('week_start', fromWeek).lte('week_start', to).order('week_start')),
+        ['qty', 'amount'],
+      ) as ItemSalesWeek[],
+  })
+}
+
+/** The stored rows for periods starting in a range: what was entered, as it was entered. */
+export const useItemSalesRows = (from: string, to: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['item_sales', 'rows', biz, from, to],
+    queryFn: async () =>
+      money(
+        await run(supabase.from('item_sales').select('*').eq('business_id', biz)
+          .gte('period_start', from).lte('period_start', to).order('period_start', { ascending: false })),
+        ['qty', 'amount'],
+      ) as ItemSale[],
+  })
+}
+
+export const useItemAliases = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['item_aliases', biz],
+    queryFn: async () => (await run(supabase.from('item_aliases').select('*').eq('business_id', biz))) as ItemAlias[],
+  })
+}
+
+export interface SalesLine {
+  /** A catalogue item, or null with newName to add it to the catalogue first. */
+  item_id: string | null
+  newName?: string
+  qty: number
+  amount: number
+  /** The name the report used, remembered so the next import matches it. */
+  reportName?: string
+  /** The till's code for it, remembered the same way (it survives a renamed product). */
+  reportCode?: string
+}
+
+/**
+ * Save one day's or week's item sales, replacing whatever that period held. Products the
+ * report named that aren't in the catalogue yet are added first, and report names are remembered.
+ */
+export const useSaveItemSales = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ start, end, lines }: { start: string; end: string; lines: SalesLine[] }) => {
+      const newNames = [...new Set(lines.filter((l) => !l.item_id && l.newName).map((l) => l.newName!.trim()))]
+      const created = newNames.length
+        ? ((await run(supabase.from('stock_items').insert(newNames.map((name) => ({ business_id: biz, name, unit: 'ea', active: true }))).select())) as StockItem[])
+        : []
+      const idOf = (l: SalesLine) => l.item_id ?? created.find((c) => c.name === l.newName?.trim())?.id
+
+      // One line per item: two report names for the same item are added together.
+      const byItem = new Map<string, { item_id: string; qty: number; amount: number }>()
+      for (const l of lines) {
+        const id = idOf(l)
+        if (!id) continue
+        const prev = byItem.get(id) ?? { item_id: id, qty: 0, amount: 0 }
+        byItem.set(id, { item_id: id, qty: prev.qty + l.qty, amount: Math.round((prev.amount + l.amount) * 100) / 100 })
+      }
+
+      const aliases = new Map<string, string>()
+      for (const l of lines) {
+        const id = idOf(l)
+        if (id && l.reportName) aliases.set(normalise(l.reportName), id)
+        if (id && l.reportCode) aliases.set(codeKey(l.reportCode), id)
+      }
+      if (aliases.size)
+        await run(supabase.from('item_aliases').upsert(
+          [...aliases].map(([alias, item_id]) => ({ business_id: biz, alias, item_id })),
+          { onConflict: 'business_id,alias' },
+        ))
+
+      return run(supabase.rpc('replace_item_sales', { p_business: biz, p_start: start, p_end: end, p_rows: [...byItem.values()] }))
+    },
+    onSuccess: () => ['item_sales', 'item_aliases', 'stock_items'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   })
 }
 

@@ -16,10 +16,12 @@ import OrderForm from './pages/OrderForm'
 import StockCounts from './pages/StockCounts'
 import StockCountSheet from './pages/StockCountSheet'
 import Catalogue from './pages/Catalogue'
+import ItemSalesEntry from './pages/ItemSalesEntry'
 
 // Charts are the heaviest code; load them only when a page that draws them opens.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const FoodCost = lazy(() => import('./pages/FoodCost'))
+const ItemSales = lazy(() => import('./pages/ItemSales'))
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: true, retry: 1 } },
@@ -58,6 +60,8 @@ export default function App() {
                   <Route path="stock/:id" element={<StockCountSheet />} />
                   <Route path="food" element={<Suspense fallback={<Loading />}><FoodCost /></Suspense>} />
                   <Route path="food/catalogue" element={<Catalogue />} />
+                  <Route path="food/sales" element={<Suspense fallback={<Loading />}><ItemSales /></Suspense>} />
+                  <Route path="food/sales/add" element={<ItemSalesEntry />} />
                   <Route path="food-cost" element={<Navigate to="/food" replace />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />

@@ -231,3 +231,32 @@ export interface ItemCost {
   business_id: string
   unit_cost: number
 }
+
+/** Sales of one item over one day or one Monday–Sunday week, from the till's report. */
+export interface ItemSale {
+  id: string
+  business_id: string
+  item_id: string
+  period_start: string
+  /** Same as period_start for a day; the Sunday for a week. */
+  period_end: string
+  qty: number
+  amount: number
+}
+
+/** One item's sales for one week: the week's own figure, or its days added up. */
+export interface ItemSalesWeek {
+  business_id: string
+  item_id: string
+  week_start: string
+  qty: number
+  amount: number
+  from_days: boolean
+}
+
+/** How the till's report names an item (lower-cased), remembered for the next import. */
+export interface ItemAlias {
+  business_id: string
+  alias: string
+  item_id: string
+}

@@ -12,6 +12,7 @@ export function FoodTabs() {
       <h1 className="mb-2 text-2xl font-bold tracking-tight">Food</h1>
       <nav aria-label="Food" className="flex gap-1.5">
         <NavLink to="/food" end className="chip">Food cost</NavLink>
+        <NavLink to="/food/sales" className="chip">Item sales</NavLink>
         <NavLink to="/food/catalogue" className="chip">Catalogue</NavLink>
       </nav>
     </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useItemCosts, useSave, useStockGroups, useStockItems, useSuppliers } from '../lib/api'
+import { useBulkUpdate, useItemCosts, useSave, useStockGroups, useStockItems, useSuppliers } from '../lib/api'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { aud } from '../lib/format'
 import type { StockItem } from '../lib/types'
@@ -67,6 +67,7 @@ function Products() {
   const [q, setQ] = useState('')
   const [showHidden, setShowHidden] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   if (items.isLoading || groups.isLoading || suppliers.isLoading) return <Loading />
 
@@ -81,6 +82,14 @@ function Products() {
   const sections = bySection(pool, groupList)
   const current = sections.some((s) => s.key === cat) ? cat : 'all'
   const shown = current === 'all' ? sections : sections.filter((s) => s.key === current)
+  // Only what is on screen counts as selected, so a filter change can't edit something out of sight.
+  const visible = shown.flatMap((s) => s.items)
+  const chosen = visible.filter((i) => selected.has(i.id)).map((i) => i.id)
+  const toggle = (ids: string[], on: boolean) => {
+    const next = new Set(selected)
+    for (const id of ids) if (on) next.add(id); else next.delete(id)
+    setSelected(next)
+  }
 
   const fields: Field[] = [
     { key: 'name', label: 'Product', type: 'text', required: true },
@@ -129,6 +138,27 @@ function Products() {
         </div>
       )}
 
+      {visible.length > 0 && (
+        <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+          <label className="flex items-center gap-2 text-ink-2">
+            <input type="checkbox" className="h-4 w-4" checked={chosen.length === visible.length}
+              ref={(el) => { if (el) el.indeterminate = chosen.length > 0 && chosen.length < visible.length }}
+              onChange={(e) => toggle(visible.map((i) => i.id), e.target.checked)} />
+            Select all {visible.length}
+          </label>
+          {chosen.length === 0 && <span className="text-xs text-muted">Tick products to change several at once.</span>}
+        </div>
+      )}
+
+      {chosen.length > 0 && (
+        <BulkBar
+          ids={chosen}
+          groups={groupList.map((g) => ({ value: g.id, label: g.name }))}
+          suppliers={supplierList.filter((s) => s.active).map((s) => ({ value: s.id, label: s.name }))}
+          onDone={() => setSelected(new Set())}
+        />
+      )}
+
       {shown.length === 0 && (
         <p className="py-8 text-center text-sm text-muted">
           {all.length === 0 ? 'No products yet. Add the things you buy and count.' : 'No products match.'}
@@ -138,12 +168,17 @@ function Products() {
       {shown.map((s) => (
         <div key={s.key} className="mt-4">
           <h3 className="mb-1 flex items-baseline justify-between border-b border-line pb-1 text-sm font-semibold">
-            {s.label}
+            <label className="flex items-center gap-3">
+              <input type="checkbox" className="h-4 w-4" aria-label={`Select all in ${s.label}`}
+                checked={s.items.every((i) => selected.has(i.id))}
+                onChange={(e) => toggle(s.items.map((i) => i.id), e.target.checked)} />
+              {s.label}
+            </label>
             <span className="text-xs font-normal text-muted">{s.items.length} {s.items.length === 1 ? 'product' : 'products'}</span>
           </h3>
           {/* Column labels for the wide layout; on a phone each row says what it is. */}
-          <div className="hidden grid-cols-[1fr_5rem_10rem_7rem_4rem] gap-3 py-1 text-xs text-muted md:grid">
-            <span>Product</span><span>Unit</span><span>Usually from</span><span className="text-right">Price</span><span />
+          <div className="hidden grid-cols-[1rem_1fr_5rem_10rem_7rem_4rem] gap-3 py-1 text-xs text-muted md:grid">
+            <span /><span>Product</span><span>Unit</span><span>Usually from</span><span className="text-right">Price</span><span />
           </div>
           <ul className="divide-y divide-line">
             {s.items.map((i) =>
@@ -154,7 +189,9 @@ function Products() {
                     onSave={async (v) => { await save.mutateAsync({ id: i.id, ...v }); setEditing(null) }} />
                 </li>
               ) : (
-                <li key={i.id} className={`grid grid-cols-[1fr_auto] items-center gap-x-3 py-2.5 md:grid-cols-[1fr_5rem_10rem_7rem_4rem] ${i.active ? '' : 'opacity-55'}`}>
+                <li key={i.id} className={`grid grid-cols-[1rem_1fr_auto] items-center gap-x-3 py-2.5 md:grid-cols-[1rem_1fr_5rem_10rem_7rem_4rem] ${i.active ? '' : 'opacity-55'} ${selected.has(i.id) ? '-mx-2 rounded-lg bg-accent/8 px-2' : ''}`}>
+                  <input type="checkbox" className="row-span-2 h-4 w-4 md:row-span-1" aria-label={`Select ${i.name}`}
+                    checked={selected.has(i.id)} onChange={(e) => toggle([i.id], e.target.checked)} />
                   <div className="min-w-0">
                     <div className="truncate font-medium">
                       {i.name}
@@ -167,7 +204,7 @@ function Products() {
                   <span className="hidden text-sm text-ink-2 md:block">{i.unit}</span>
                   <span className="hidden truncate text-sm text-ink-2 md:block">{supplierName(i.supplier_id) ?? <span className="text-muted">—</span>}</span>
                   <Price unit={i.unit} cost={i.unit_cost} paid={lastPaid(i)} />
-                  <span className="col-start-2 row-span-2 row-start-1 flex justify-end md:col-auto md:row-auto">
+                  <span className="col-start-3 row-span-2 row-start-1 flex justify-end md:col-auto md:row-auto">
                     <button type="button" className="btn btn-sm" onClick={() => setEditing(i.id)}>Edit</button>
                   </span>
                 </li>
@@ -191,11 +228,72 @@ function Products() {
   )
 }
 
+const KEEP = ''
+const NONE = '__none'
+
+/** Change the category, supplier or visibility of every ticked product in one go. Blank means leave as is. */
+function BulkBar({
+  ids, groups, suppliers, onDone,
+}: { ids: string[]; groups: Option[]; suppliers: Option[]; onDone: () => void }) {
+  const update = useBulkUpdate('stock_items')
+  const [group, setGroup] = useState(KEEP)
+  const [supplier, setSupplier] = useState(KEEP)
+  const [active, setActive] = useState(KEEP)
+  const patch: Record<string, unknown> = {}
+  if (group !== KEEP) patch.group_id = group === NONE ? null : group
+  if (supplier !== KEEP) patch.supplier_id = supplier === NONE ? null : supplier
+  if (active !== KEEP) patch.active = active === 'show'
+  const changes = Object.keys(patch).length
+
+  const pick = (label: string, value: string, set: (v: string) => void, options: Option[], none: string) => (
+    <div className="min-w-36 flex-1">
+      <label className="label">{label}
+        <select className="field mt-1.5 !py-2" value={value} onChange={(e) => set(e.target.value)}>
+          <option value={KEEP}>Leave as is</option>
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          <option value={NONE}>{none}</option>
+        </select>
+      </label>
+    </div>
+  )
+
+  return (
+    <div className="sticky top-16 z-10 mt-3 rounded-xl border border-accent/40 bg-surface p-3 shadow-lg">
+      <ErrorBox error={update.error} />
+      <p className="mb-2 text-sm font-semibold">{ids.length} {ids.length === 1 ? 'product' : 'products'} selected</p>
+      <div className="flex flex-wrap items-end gap-2">
+        {pick('Category', group, setGroup, groups, 'No category')}
+        {pick('Usually from', supplier, setSupplier, suppliers, 'No supplier')}
+        <div className="min-w-32">
+          <label className="label">Show in orders &amp; counts
+            <select className="field mt-1.5 !py-2" value={active} onChange={(e) => setActive(e.target.value)}>
+              <option value={KEEP}>Leave as is</option>
+              <option value="show">Active</option>
+              <option value="hide">Hidden</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" className="btn btn-primary !py-2" disabled={!changes || update.isPending}
+          onClick={async () => {
+            await update.mutateAsync({ ids, patch })
+            setGroup(KEEP); setSupplier(KEEP); setActive(KEEP)
+            onDone()
+          }}>
+          {update.isPending ? 'Saving…' : `Update ${ids.length}`}
+        </button>
+        <button type="button" className="btn !py-2" onClick={onDone}>Clear</button>
+      </div>
+    </div>
+  )
+}
+
+interface Option { value: string; label: string }
+
 /** The price an order would use, and where it came from. */
 function Price({ unit, cost, paid }: { unit: string; cost: number | null; paid: number | undefined }) {
   const value = paid || cost
   return (
-    <span className="num col-start-1 text-xs text-ink-2 md:col-auto md:text-right md:text-sm">
+    <span className="num col-start-2 text-xs text-ink-2 md:col-auto md:text-right md:text-sm">
       {value ? <>{aud(value)}<span className="text-muted md:hidden"> / {unit}</span></> : <span className="text-muted">no price</span>}
       {paid && cost && Math.abs(paid - cost) > 0.004 ? <span className="block text-[11px] text-muted">last paid</span> : null}
     </span>

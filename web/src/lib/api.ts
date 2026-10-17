@@ -187,6 +187,10 @@ export const useRemove = (tableName: string) =>
 export const useAddOrderLines = () =>
   useWrite<Row[]>('purchase_order_lines', (rows) => supabase.from('purchase_order_lines').insert(rows))
 
+/** The same change to many rows at once — the catalogue's bulk edit. */
+export const useBulkUpdate = (tableName: string) =>
+  useWrite<{ ids: string[]; patch: Row }>(tableName, ({ ids, patch }) => supabase.from(tableName).update(patch).in('id', ids))
+
 export const useUpsertSales = () => {
   const biz = useBusinessId()
   return useWrite<Omit<SalesDay, 'id' | 'business_id'>[]>('sales_days', (rows) =>

@@ -1,11 +1,10 @@
 import { useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import {
   useChangeMyPassword, useCreateBusiness, useAddPerson, useBusinessUsers, useContributions, usePartners,
-  useRemovePerson, useSaveBusiness, useSetPersonPassword, useSetupCosts, useStaff, useStockGroups,
-  useStockItems, useSuppliers,
+  useRemovePerson, useSaveBusiness, useSetPersonPassword, useSetupCosts, useStaff,
 } from '../lib/api'
 import { useBusiness } from '../lib/business'
-import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { aud, cents } from '../lib/format'
 import { TableEditor } from '../components/TableEditor'
 import { DeleteButton, ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
@@ -20,93 +19,30 @@ function Section({ title, hint, children, id }: { title: string; hint?: ReactNod
   )
 }
 
-const CATEGORY_OPTIONS = ENTRY_CATEGORIES.map((c) => ({ value: c, label: CAT_LABEL[c] }))
-
-/** How stock is bought and counted. Free-form would make the count sheet read inconsistently. */
-const UNIT_OPTIONS = [
-  { value: 'ea', label: 'each' },
-  { value: 'kg', label: 'kg' },
-  { value: 'g', label: 'g' },
-  { value: 'L', label: 'litre' },
-  { value: 'mL', label: 'mL' },
-  { value: 'box', label: 'box' },
-  { value: 'bag', label: 'bag' },
-  { value: 'carton', label: 'carton' },
-  { value: 'tray', label: 'tray' },
-  { value: 'pkt', label: 'packet' },
-  { value: 'tub', label: 'tub' },
-  { value: 'bottle', label: 'bottle' },
-]
-
 export default function Settings() {
-  const suppliers = useSuppliers()
   const staff = useStaff()
   const partners = usePartners()
   const contributions = useContributions()
   const setup = useSetupCosts()
-  const groups = useStockGroups()
-  const items = useStockItems()
   const partnerOptions = (partners.data ?? []).map((p) => ({ value: p.id, label: p.name }))
-  const groupOptions = (groups.data ?? []).map((g) => ({ value: g.id, label: g.name }))
-  const supplierOptions = (suppliers.data ?? []).filter((s) => s.active).map((s) => ({ value: s.id, label: s.name }))
 
   return (
     <div>
       <PageHeader title="Settings" />
       <nav aria-label="Settings sections" className="mb-4 flex flex-wrap gap-1.5">
-        {[['business', 'Business'], ['password', 'Your password'], ['suppliers', 'Suppliers'], ['items', 'Stock items'], ['sections', 'Sections'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
+        {[['business', 'Business'], ['password', 'Your password'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="chip">{label}</a>
         ))}
       </nav>
+      <p className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-2">
+        Suppliers, products and their categories have moved to{' '}
+        <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link>.
+      </p>
 
       <div className="grid gap-4">
         <BusinessSection />
         <MyPasswordSection />
         <PartnerSummary />
-
-        <Section id="suppliers" title="Suppliers" hint="Untick “Active” to hide a supplier from the pickers without losing its history.">
-          {suppliers.isLoading ? <Loading /> : (
-            <TableEditor table="suppliers" rows={suppliers.data ?? []} addLabel="Add supplier" canDelete={false}
-              defaults={{ default_category: 'food', active: true }}
-              fields={[
-                { key: 'name', label: 'Name', type: 'text', required: true },
-                { key: 'default_category', label: 'Usually', type: 'select', options: CATEGORY_OPTIONS, width: 'md:w-40' },
-                { key: 'active', label: 'Active', type: 'bool', width: 'md:w-16' },
-              ]} />
-          )}
-        </Section>
-
-        <Section id="items" title="Stock items"
-          hint="The things you buy and count. These are what you pick from when raising an order, and what the weekly count sheet asks for. Untick “Active” to drop an item off both without losing its history.">
-          {items.isLoading || groups.isLoading || suppliers.isLoading ? <Loading /> : (
-            <TableEditor table="stock_items" rows={items.data ?? []} addLabel="Add stock item" canDelete={false}
-              defaults={{ unit: 'ea', active: true }}
-              fields={[
-                { key: 'name', label: 'Item', type: 'text', required: true },
-                { key: 'unit', label: 'Unit', type: 'select', required: true, options: UNIT_OPTIONS, width: 'md:w-24' },
-                { key: 'group_id', label: 'Section', type: 'select', options: groupOptions, width: 'md:w-36' },
-                { key: 'supplier_id', label: 'Usually from', type: 'select', options: supplierOptions, width: 'md:w-40' },
-                { key: 'unit_cost', label: 'Cost per unit', type: 'money', width: 'md:w-28 md:text-right' },
-                { key: 'active', label: 'Active', type: 'bool', width: 'md:w-16' },
-              ]} />
-          )}
-          <p className="mt-3 text-xs text-muted">
-            The cost here is a fallback. Once you've received an order for an item, the price you actually paid is what the
-            count sheet values it at.
-          </p>
-        </Section>
-
-        <Section id="sections" title="Count sheet sections"
-          hint="Where stock lives — cool room, freezer, dry store. The count sheet is laid out in this order, so you can walk the shop once. Lowest number first.">
-          {groups.isLoading ? <Loading /> : (
-            <TableEditor table="stock_groups" rows={groups.data ?? []} addLabel="Add section"
-              defaults={{ sort: ((groups.data ?? []).reduce((m, g) => Math.max(m, g.sort), 0) + 10) }}
-              fields={[
-                { key: 'name', label: 'Section', type: 'text', required: true },
-                { key: 'sort', label: 'Order', type: 'number', width: 'md:w-20 md:text-right' },
-              ]} />
-          )}
-        </Section>
 
         <Section id="staff" title="Staff" hint="The hourly rate fills in wages automatically (hours × rate) when you add a labour expense.">
           {staff.isLoading ? <Loading /> : (
@@ -161,7 +97,7 @@ export default function Settings() {
         </Section>
 
         <p className="text-xs text-muted">
-          Each business keeps its own suppliers, stock items, staff, partners and costs. People only see the businesses they’re added to.
+          Each business keeps its own catalogue, staff, partners and costs. People only see the businesses they’re added to.
         </p>
       </div>
     </div>

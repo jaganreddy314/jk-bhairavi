@@ -15,6 +15,7 @@ import Orders from './pages/Orders'
 import OrderForm from './pages/OrderForm'
 import StockCounts from './pages/StockCounts'
 import StockCountSheet from './pages/StockCountSheet'
+import Catalogue from './pages/Catalogue'
 
 // Charts are the heaviest code; load them only when a page that draws them opens.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -55,7 +56,9 @@ export default function App() {
                   <Route path="orders/:id" element={<OrderForm />} />
                   <Route path="stock" element={<StockCounts />} />
                   <Route path="stock/:id" element={<StockCountSheet />} />
-                  <Route path="food-cost" element={<Suspense fallback={<Loading />}><FoodCost /></Suspense>} />
+                  <Route path="food" element={<Suspense fallback={<Loading />}><FoodCost /></Suspense>} />
+                  <Route path="food/catalogue" element={<Catalogue />} />
+                  <Route path="food-cost" element={<Navigate to="/food" replace />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>

@@ -7,6 +7,7 @@ import { foodCostPct, stockMovement } from '../lib/purchasing'
 import type { WeeklyFoodCost } from '../lib/types'
 import { RangeFilter, useRange } from '../components/RangeFilter'
 import { axisProps, ChartCard, Legend, TipBox, usePalette } from '../components/charts'
+import { FoodTabs } from '../components/catalogue'
 import { Empty, ErrorBox, Loading } from '../components/ui'
 
 export default function FoodCost() {
@@ -17,8 +18,8 @@ export default function FoodCost() {
 
   return (
     <div>
+      <FoodTabs />
       <div className="mb-4">
-        <h1 className="mb-1 text-2xl font-bold tracking-tight">Food cost</h1>
         <p className="mb-2 text-sm text-muted">
           What the food actually cost each week: the stock you started with, plus what you bought, less what was left.
         </p>

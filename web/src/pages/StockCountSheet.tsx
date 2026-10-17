@@ -105,7 +105,7 @@ function Sheet({ count }: { count: StockCount }) {
         <Loading />
       ) : rows.length === 0 ? (
         <p className="card px-4 py-8 text-center text-sm text-muted">
-          Nothing to count. Add stock items in <Link className="font-semibold text-accent" to="/settings#items">Settings</Link>.
+          Nothing to count. Add stock items in <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link>.
         </p>
       ) : (
         <div className="grid gap-4">

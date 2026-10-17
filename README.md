@@ -132,8 +132,8 @@ The database needs `supabase/migrations/006_purchasing_stock.sql` run once. In S
 
 Then, in the app:
 
-1. **Settings → Count sheet sections** — where stock lives (cool room, freezer, dry store), lowest number first. This is the order you'll walk the shop in.
-2. **Settings → Stock items** — what you buy and count, each with its unit (kg, box, carton…), its section, who you usually buy it from, and roughly what it costs. The cost is only a starting point; once you've received an order the real price takes over.
+1. **Food → Catalogue → Categories** — where stock lives (cool room, freezer, dry store), lowest number first. This is the order you'll walk the shop in.
+2. **Food → Catalogue → Products** — what you buy and count, each with its unit (kg, box, carton…), its section, who you usually buy it from, and roughly what it costs. The cost is only a starting point; once you've received an order the real price takes over.
 3. **Stock counts** — count once to set the opening stock. Food cost needs a second count a week later before it has anything to compare.
 
 ## QA environment

@@ -54,7 +54,7 @@ export default function Orders() {
           {status || supplierId ? 'No orders match that filter.' : (
             <>
               No orders yet. <Link className="font-semibold text-accent" to="/orders/new">Raise the first one</Link> — add the
-              things you buy in <Link className="font-semibold text-accent" to="/settings#items">Settings</Link> first and they'll
+              things you buy in <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link> first and they'll
               be there to pick from.
             </>
           )}

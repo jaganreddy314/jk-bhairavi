@@ -59,7 +59,7 @@ export default function StockCounts() {
         {itemCount === 0 ? (
           <p className="mt-2 text-sm text-muted">
             There's nothing to count yet. Add what you keep in stock in{' '}
-            <Link className="font-semibold text-accent" to="/settings#items">Settings → Stock items</Link>.
+            <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link>.
           </p>
         ) : (
           <p className="mt-2 text-xs text-muted">
@@ -99,7 +99,7 @@ export default function StockCounts() {
       )}
 
       <p className="mt-4 text-sm text-muted">
-        Once two counts bracket a week, <Link className="font-semibold text-accent" to="/food-cost">Food cost</Link> shows what
+        Once two counts bracket a week, <Link className="font-semibold text-accent" to="/food">Food cost</Link> shows what
         that week's food actually cost.
       </p>
     </div>

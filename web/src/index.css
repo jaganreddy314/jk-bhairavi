@@ -211,7 +211,8 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
-.chip[aria-pressed="true"] {
+.chip[aria-pressed="true"],
+.chip[aria-current="page"] {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--surface);

@@ -18,7 +18,7 @@ const NAV: NavItem[] = [
   { to: '/expenses/new', label: 'Add expense', short: 'Add', end: true, icon: icon('M12 5v14M5 12h14') },
   { to: '/orders', label: 'Purchase orders', short: 'Orders', icon: icon('M6 2h9l5 5v15H6zM15 2v5h5M9 13h7M9 17h7') },
   { to: '/stock', label: 'Stock counts', short: 'Stock', icon: icon('M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10') },
-  { to: '/food-cost', label: 'Food cost', short: 'Food cost', icon: icon('M5 3v8a3 3 0 0 0 6 0V3M8 11v10M19 3c-1.7 1.4-2.5 3.3-2.5 5.5 0 1.6.6 2.6 1.5 3.1V21') },
+  { to: '/food', label: 'Food', short: 'Food', icon: icon('M5 3v8a3 3 0 0 0 6 0V3M8 11v10M19 3c-1.7 1.4-2.5 3.3-2.5 5.5 0 1.6.6 2.6 1.5 3.1V21') },
 ]
 
 /** Reached from the “More” button: needed regularly, but not every day. */

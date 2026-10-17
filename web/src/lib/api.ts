@@ -183,6 +183,10 @@ export const useSave = (tableName: string) => {
 export const useRemove = (tableName: string) =>
   useWrite<string>(tableName, (id) => supabase.from(tableName).delete().eq('id', id))
 
+/** Several order lines in one insert — what the item picker adds. */
+export const useAddOrderLines = () =>
+  useWrite<Row[]>('purchase_order_lines', (rows) => supabase.from('purchase_order_lines').insert(rows))
+
 export const useUpsertSales = () => {
   const biz = useBusinessId()
   return useWrite<Omit<SalesDay, 'id' | 'business_id'>[]>('sales_days', (rows) =>

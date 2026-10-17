@@ -98,7 +98,7 @@ export function TableEditor({
   )
 }
 
-function RowForm({
+export function RowForm({
   fields, initial, onSave, onCancel, busy,
 }: { fields: Field[]; initial: Record<string, unknown>; onSave: (v: Record<string, unknown>) => void; onCancel: () => void; busy: boolean }) {
   const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.key, toInput(f, initial[f.key])])))

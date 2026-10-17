@@ -145,7 +145,7 @@ function Body({ from, to, sales, expenses }: { from: string; to: string; sales: 
         <Tile label="Expenses" value={audRound(m.opex)} sub={m.equipment ? `+ ${audRound(m.equipment)} equipment` : 'operating costs'} />
         <Tile label="Profit" value={audRound(m.profit)} tone={m.profit < 0 ? 'bad' : undefined}
           sub={m.equipment ? `${audRound(m.profit - m.equipment)} after equipment` : `${pct(m.profit / m.totalSales)} margin`} />
-        <Tile label="Food bought" value={pct(m.food / m.totalSales)} sub={`${audRound(m.food)} · food cost →`} to="/food-cost" />
+        <Tile label="Food bought" value={pct(m.food / m.totalSales)} sub={`${audRound(m.food)} · food cost →`} to="/food" />
         <Tile label="Labour" value={pct(m.labour / m.totalSales)} sub={m.labour ? `${audRound(m.labour)} of sales` : 'no wages entered'} />
         {simple ? (
           <Tile label="Cash collected" value={audRound(m.cashCollected)}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  useItemCosts, useOrderLines, usePurchaseOrder, useReceiveOrder, useRemove, useReopenOrder,
+  useAddOrderLines, useItemCosts, useOrderLines, usePurchaseOrder, useReceiveOrder, useRemove, useReopenOrder,
   useSave, useStockGroups, useStockItems, useSuppliers,
 } from '../lib/api'
 import { useBusiness } from '../lib/business'
@@ -9,7 +9,8 @@ import { PAID_VIA } from '../lib/categories'
 import { fmtDay, todayStr } from '../lib/dates'
 import { aud, parseMoney } from '../lib/format'
 import { lineTotal, orderText, orderTotal, qtyStr } from '../lib/purchasing'
-import type { PaidVia, PurchaseOrder, PurchaseOrderLine, StockItem } from '../lib/types'
+import type { ItemCost, PaidVia, PurchaseOrder, PurchaseOrderLine, StockGroup, StockItem, Supplier } from '../lib/types'
+import { ItemPicker, PickSummary, pickedLines, type Picks } from '../components/catalogue'
 import { DeleteButton, ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
 import { StatusPill } from './Orders'
 
@@ -23,58 +24,77 @@ export default function OrderForm() {
   return <Editor order={order.data} />
 }
 
-/** Just the header: supplier and dates. The lines are added once the order exists. */
+/** Supplier and dates, then every item with a quantity box — the order is filled in one go. */
 function NewOrder() {
   const nav = useNavigate()
   const suppliers = useSuppliers()
+  const items = useStockItems()
+  const groups = useStockGroups()
+  const costs = useItemCosts()
   const save = useSave('purchase_orders')
+  const addLines = useAddOrderLines()
   const [supplierId, setSupplierId] = useState('')
   const [orderedOn, setOrderedOn] = useState(todayStr())
   const [expectedOn, setExpectedOn] = useState('')
+  const [picks, setPicks] = useState<Picks>({})
 
   const active = (suppliers.data ?? []).filter((s) => s.active)
+  const supplier = active.find((s) => s.id === supplierId)
+  const lines = pickedLines(picks)
+  const busy = save.isPending || addLines.isPending
+
+  async function create() {
+    if (!supplierId) return
+    const row = await save.mutateAsync({
+      supplier_id: supplierId, status: 'draft', ordered_on: orderedOn, expected_on: expectedOn || null,
+    })
+    // The insert comes back as an array of the rows written.
+    const created = (row as PurchaseOrder[] | null)?.[0]
+    if (!created) return nav('/orders')
+    if (lines.length) await addLines.mutateAsync(lines.map((l, i) => ({ ...l, purchase_order_id: created.id, sort: i })))
+    nav(`/orders/${created.id}`)
+  }
 
   return (
-    <div className="mx-auto max-w-md">
+    <div className="mx-auto max-w-2xl">
       <PageHeader title="New order" action={<Link to="/orders" className="text-sm font-medium text-accent">All orders →</Link>} />
-      <form
-        className="card space-y-4 p-4"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          if (!supplierId) return
-          const row = await save.mutateAsync({
-            supplier_id: supplierId, status: 'draft', ordered_on: orderedOn, expected_on: expectedOn || null,
-          })
-          // The insert comes back as an array of the rows written.
-          const created = (row as PurchaseOrder[] | null)?.[0]
-          nav(created ? `/orders/${created.id}` : '/orders')
-        }}
-      >
-        <ErrorBox error={save.error} />
-        <div>
+      <form className="card mb-4 grid gap-3 p-4 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); create() }}>
+        <ErrorBox error={save.error || addLines.error} />
+        <div className="sm:col-span-3">
           <label className="label" htmlFor="supplier">Supplier</label>
-          <select id="supplier" className="field" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
+          <select id="supplier" className="field" value={supplierId} required
+            onChange={(e) => { setSupplierId(e.target.value); setPicks({}) }}>
             <option value="">— Choose —</option>
             {active.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           {active.length === 0 && (
-            <p className="mt-1 text-xs text-muted">No suppliers yet — add them in <Link className="text-accent" to="/settings#suppliers">Settings</Link>.</p>
+            <p className="mt-1 text-xs text-muted">No suppliers yet — add them in <Link className="text-accent" to="/food/catalogue?tab=suppliers">Food → Catalogue</Link>.</p>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="ordered">Ordered</label>
-            <input id="ordered" type="date" className="field" value={orderedOn} onChange={(e) => setOrderedOn(e.target.value)} required />
-          </div>
-          <div>
-            <label className="label" htmlFor="expected">Delivery <span className="font-normal text-muted">(optional)</span></label>
-            <input id="expected" type="date" className="field" value={expectedOn} min={orderedOn} onChange={(e) => setExpectedOn(e.target.value)} />
-          </div>
+        <div>
+          <label className="label" htmlFor="ordered">Ordered</label>
+          <input id="ordered" type="date" className="field" value={orderedOn} onChange={(e) => setOrderedOn(e.target.value)} required />
         </div>
-        <button className="btn btn-primary w-full" disabled={!supplierId || save.isPending}>
-          {save.isPending ? 'Creating…' : 'Create order'}
-        </button>
+        <div>
+          <label className="label" htmlFor="expected">Delivery <span className="font-normal text-muted">(optional)</span></label>
+          <input id="expected" type="date" className="field" value={expectedOn} min={orderedOn} onChange={(e) => setExpectedOn(e.target.value)} />
+        </div>
       </form>
+
+      {supplier && (
+        <section className="card p-4">
+          <h2 className="mb-3 font-semibold">What do you need?</h2>
+          {items.isLoading || groups.isLoading ? <Loading /> : (
+            <ItemPicker key={supplier.id} supplier={supplier} items={items.data ?? []} groups={groups.data ?? []} costs={costs.data ?? []}
+              picks={picks} onChange={setPicks} />
+          )}
+          <PickSummary picks={picks}>
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={create}>
+              {busy ? 'Creating…' : lines.length ? 'Create order' : 'Create empty order'}
+            </button>
+          </PickSummary>
+        </section>
+      )}
     </div>
   )
 }
@@ -164,13 +184,15 @@ function Editor({ order }: { order: PurchaseOrder }) {
             </ul>
             {rows.length === 0 && <p className="py-3 text-sm text-muted">Nothing on this order yet.</p>}
             {!locked && (
-              <AddLine
+              <AddItems
                 orderId={order.id}
-                supplierId={order.supplier_id}
+                supplier={supplier}
                 items={items.data ?? []}
                 groups={groups.data ?? []}
                 costs={costs.data ?? []}
                 alreadyOn={new Set(rows.map((l) => l.item_id).filter(Boolean) as string[])}
+                nextSort={rows.reduce((m, l) => Math.max(m, l.sort + 1), 0)}
+                startOpen={rows.length === 0}
               />
             )}
             <p className="num mt-3 flex items-baseline justify-between border-t border-line pt-3 font-bold">
@@ -316,104 +338,88 @@ function LineRow({ line, item, locked }: { line: PurchaseOrderLine; item: StockI
   )
 }
 
-/** Pick an item, say how much. The supplier's own items come first. */
-function AddLine({
-  orderId, supplierId, items, groups, costs, alreadyOn,
+/** More from the catalogue (the same list as a new order), or a one-off line. */
+function AddItems({
+  orderId, supplier, items, groups, costs, alreadyOn, nextSort, startOpen,
 }: {
   orderId: string
-  supplierId: string
+  supplier: Supplier | undefined
   items: StockItem[]
-  groups: { id: string; name: string; sort: number }[]
-  costs: { item_id: string; unit_cost: number }[]
+  groups: StockGroup[]
+  costs: ItemCost[]
   alreadyOn: Set<string>
+  nextSort: number
+  startOpen: boolean
 }) {
+  const add = useAddOrderLines()
+  const [mode, setMode] = useState<'closed' | 'items' | 'oneoff'>(startOpen ? 'items' : 'closed')
+  const [picks, setPicks] = useState<Picks>({})
+  const lines = pickedLines(picks)
+
+  if (mode === 'closed')
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className="btn btn-sm" onClick={() => setMode('items')}>+ Add items</button>
+        <button type="button" className="btn btn-sm" onClick={() => setMode('oneoff')}>+ One-off item</button>
+      </div>
+    )
+
+  if (mode === 'oneoff') return <OneOffLine orderId={orderId} sort={nextSort} onDone={() => setMode('closed')} />
+
+  return (
+    <div className="mt-3 rounded-xl border border-line p-3">
+      <ErrorBox error={add.error} />
+      <ItemPicker supplier={supplier} items={items} groups={groups} costs={costs} exclude={alreadyOn} picks={picks} onChange={setPicks} />
+      <PickSummary picks={picks}>
+        <button type="button" className="btn" onClick={() => { setPicks({}); setMode('closed') }}>Close</button>
+        <button type="button" className="btn btn-primary" disabled={!lines.length || add.isPending}
+          onClick={async () => {
+            await add.mutateAsync(lines.map((l, i) => ({ ...l, purchase_order_id: orderId, sort: nextSort + i })))
+            setPicks({})
+          }}>
+          {add.isPending ? 'Adding…' : `Add ${lines.length || ''} to order`}
+        </button>
+      </PickSummary>
+    </div>
+  )
+}
+
+/** Something bought once that isn't worth adding to the catalogue. */
+function OneOffLine({ orderId, sort, onDone }: { orderId: string; sort: number; onDone: () => void }) {
   const save = useSave('purchase_order_lines')
-  const [itemId, setItemId] = useState('')
   const [description, setDescription] = useState('')
   const [qty, setQty] = useState('')
   const [cost, setCost] = useState('')
-  const [costTouched, setCostTouched] = useState(false)
-
-  const costOf = (id: string) => costs.find((c) => c.item_id === id)?.unit_cost ?? 0
-  const chosen = items.find((i) => i.id === itemId)
-  const shownCost = !costTouched && chosen ? String(costOf(chosen.id) || chosen.unit_cost || '') : cost
-  const oneOff = itemId === '__other'
-
-  // The supplier you're ordering from first, then everything else, grouped by section.
-  const groupName = (id: string | null) => groups.find((g) => g.id === id)?.name ?? 'Other items'
-  const selectable = items.filter((i) => i.active && !alreadyOn.has(i.id))
-  const theirs = selectable.filter((i) => i.supplier_id === supplierId)
-  const rest = selectable.filter((i) => i.supplier_id !== supplierId)
-  const options = (list: StockItem[]) => {
-    const byGroup = new Map<string, StockItem[]>()
-    for (const i of [...list].sort((a, b) => a.name.localeCompare(b.name))) {
-      const key = groupName(i.group_id)
-      byGroup.set(key, [...(byGroup.get(key) ?? []), i])
-    }
-    return [...byGroup.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  }
-
   const qtyNum = parseMoney(qty)
-  const valid = qtyNum > 0 && (oneOff ? description.trim() !== '' : !!itemId)
-
-  function reset() {
-    setItemId('')
-    setDescription('')
-    setQty('')
-    setCost('')
-    setCostTouched(false)
-  }
+  const valid = qtyNum > 0 && description.trim() !== ''
 
   return (
     <form
-      className="mt-3 grid gap-2 rounded-xl bg-surface-2 p-3 sm:grid-cols-[1fr_5rem_6rem_auto] sm:items-end"
+      className="mt-3 grid gap-2 rounded-xl bg-surface-2 p-3 sm:grid-cols-[1fr_5rem_6rem_auto_auto] sm:items-end"
       onSubmit={async (e) => {
         e.preventDefault()
         if (!valid) return
         await save.mutateAsync({
-          purchase_order_id: orderId,
-          item_id: oneOff ? null : itemId,
-          description: oneOff ? description.trim() : null,
-          qty: qtyNum,
-          unit_cost: parseMoney(shownCost),
+          purchase_order_id: orderId, item_id: null, description: description.trim(), qty: qtyNum, unit_cost: parseMoney(cost), sort,
         })
-        reset()
+        onDone()
       }}
     >
-      <div className="sm:col-span-1">
-        <label className="label" htmlFor="add-item">Item</label>
-        <select id="add-item" className="field" value={itemId} onChange={(e) => { setItemId(e.target.value); setCostTouched(false) }}>
-          <option value="">— Choose —</option>
-          {theirs.length > 0 && (
-            <optgroup label="Usually from this supplier">
-              {theirs.sort((a, b) => a.name.localeCompare(b.name)).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </optgroup>
-          )}
-          {options(rest).map(([g, list]) => (
-            <optgroup key={g} label={g}>
-              {list.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </optgroup>
-          ))}
-          <option value="__other">Something else (one-off)…</option>
-        </select>
-        {oneOff && (
-          <input aria-label="What is it" className="field mt-2" placeholder="What is it?" value={description}
-            onChange={(e) => setDescription(e.target.value)} />
-        )}
+      <ErrorBox error={save.error} />
+      <div>
+        <label className="label" htmlFor="oo-what">What is it</label>
+        <input id="oo-what" className="field" value={description} autoFocus onChange={(e) => setDescription(e.target.value)} />
       </div>
       <div>
-        <label className="label" htmlFor="add-qty">Qty{chosen ? ` (${chosen.unit})` : ''}</label>
-        <input id="add-qty" className="field" inputMode="decimal" placeholder="0" value={qty} onChange={(e) => setQty(e.target.value)} />
+        <label className="label" htmlFor="oo-qty">Qty</label>
+        <input id="oo-qty" className="field" inputMode="decimal" placeholder="0" value={qty} onChange={(e) => setQty(e.target.value)} />
       </div>
       <div>
-        <label className="label" htmlFor="add-cost">Price each</label>
-        <input id="add-cost" className="field" inputMode="decimal" placeholder="0.00" value={shownCost}
-          onChange={(e) => { setCost(e.target.value); setCostTouched(true) }} />
+        <label className="label" htmlFor="oo-cost">Price each</label>
+        <input id="oo-cost" className="field" inputMode="decimal" placeholder="0.00" value={cost} onChange={(e) => setCost(e.target.value)} />
       </div>
       <button className="btn btn-primary !py-2.5" disabled={!valid || save.isPending}>Add</button>
-      {!oneOff && chosen && !costTouched && costOf(chosen.id) > 0 && (
-        <p className="text-xs text-muted sm:col-span-4">Last paid {aud(costOf(chosen.id))} per {chosen.unit}.</p>
-      )}
+      <button type="button" className="btn !py-2.5" onClick={onDone}>Cancel</button>
     </form>
   )
 }

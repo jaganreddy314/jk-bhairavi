@@ -25,6 +25,21 @@ async function run<T>(p: PromiseLike<{ data: T | null; error: { message: string 
   return data as T
 }
 
+/**
+ * Every row, not just the first 1,000. The API caps each request at 1,000 rows (max_rows),
+ * and a catalogue or a few weeks of item sales passes that, so ask page by page.
+ * The query must sort on something unique, or a row could land on two pages or none.
+ */
+async function runAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const SIZE = 1000
+  const out: T[] = []
+  for (let from = 0; ; from += SIZE) {
+    const rows = await run(page(from, from + SIZE - 1))
+    out.push(...rows)
+    if (rows.length < SIZE) return out
+  }
+}
+
 // ---------- reads ----------
 // Every query is filtered by the selected business. Row-level security enforces the same
 // thing server-side; the filter also keeps each business's cached data separate.
@@ -35,8 +50,8 @@ export const useSales = (from: string, to: string) => {
     queryKey: ['sales', biz, from, to],
     queryFn: async () =>
       money(
-        await run(supabase.from('sales_days').select('*').eq('business_id', biz)
-          .gte('sale_date', from).lte('sale_date', to).order('sale_date')),
+        await runAll((a, b) => supabase.from('sales_days').select('*').eq('business_id', biz)
+          .gte('sale_date', from).lte('sale_date', to).order('sale_date').order('id').range(a, b)),
         ['eftpos', 'cash', 'uber', 'online', 'total_recorded', 'cash_collected'],
       ) as SalesDay[],
   })
@@ -48,8 +63,8 @@ export const useAllExpenses = (from: string, to: string) => {
     queryKey: ['all-expenses', biz, from, to],
     queryFn: async () =>
       money(
-        await run(supabase.from('v_all_expenses').select('*').eq('business_id', biz)
-          .gte('expense_date', from).lte('expense_date', to).order('expense_date')),
+        await runAll((a, b) => supabase.from('v_all_expenses').select('*').eq('business_id', biz)
+          .gte('expense_date', from).lte('expense_date', to).order('expense_date').order('id').order('is_recurring').range(a, b)),
         ['amount'],
       ) as AnyExpense[],
   })
@@ -61,11 +76,14 @@ export const useExpenses = (f: ExpenseFilter) => {
   return useQuery({
     queryKey: ['expenses', biz, f],
     queryFn: async () => {
-      let q = supabase.from('expenses').select('*').eq('business_id', biz)
-        .gte('expense_date', f.from).lte('expense_date', f.to)
-      if (f.category) q = q.eq('category', f.category)
-      if (f.supplierId) q = q.eq('supplier_id', f.supplierId)
-      return money(await run(q.order('expense_date', { ascending: false }).order('created_at', { ascending: false })), [
+      const page = (a: number, b: number) => {
+        let q = supabase.from('expenses').select('*').eq('business_id', biz)
+          .gte('expense_date', f.from).lte('expense_date', f.to)
+        if (f.category) q = q.eq('category', f.category)
+        if (f.supplierId) q = q.eq('supplier_id', f.supplierId)
+        return q.order('expense_date', { ascending: false }).order('created_at', { ascending: false }).order('id').range(a, b)
+      }
+      return money(await runAll(page), [
         'amount', 'hours',
       ]) as Expense[]
     },
@@ -100,7 +118,7 @@ const scopedTable = <T,>(name: string, order: string, moneyFields: string[] = []
   return useQuery({
     queryKey: [name, biz],
     queryFn: async () =>
-      money(await run(supabase.from(name).select('*').eq('business_id', biz).order(order)), moneyFields as never[]) as T[],
+      money(await runAll((a, b) => supabase.from(name).select('*').eq('business_id', biz).order(order).order('id').range(a, b)), moneyFields as never[]) as T[],
   })
 }
 
@@ -257,7 +275,7 @@ export const useItemCosts = () => {
   return useQuery({
     queryKey: ['item_costs', biz],
     queryFn: async () =>
-      money(await run(supabase.from('v_item_cost').select('*').eq('business_id', biz)), ['unit_cost']) as ItemCost[],
+      money(await runAll((a, b) => supabase.from('v_item_cost').select('*').eq('business_id', biz).order('item_id').range(a, b)), ['unit_cost']) as ItemCost[],
   })
 }
 
@@ -317,7 +335,7 @@ export const useStockCountLines = (countId: string | undefined) =>
     queryKey: ['stock_count_lines', countId],
     enabled: !!countId,
     queryFn: async () =>
-      money(await run(supabase.from('stock_count_lines').select('*').eq('stock_count_id', countId!)), ['qty', 'unit_cost']) as StockCountLine[],
+      money(await runAll((a, b) => supabase.from('stock_count_lines').select('*').eq('stock_count_id', countId!).order('id').range(a, b)), ['qty', 'unit_cost']) as StockCountLine[],
   })
 
 /** Weekly food cost: opening stock + purchases − closing stock. Weeks, not days. */
@@ -343,8 +361,8 @@ export const useItemSalesWeekly = (fromWeek: string, to: string) => {
     queryKey: ['item_sales', 'weekly', biz, fromWeek, to],
     queryFn: async () =>
       money(
-        await run(supabase.from('v_item_sales_weekly').select('*').eq('business_id', biz)
-          .gte('week_start', fromWeek).lte('week_start', to).order('week_start')),
+        await runAll((a, b) => supabase.from('v_item_sales_weekly').select('*').eq('business_id', biz)
+          .gte('week_start', fromWeek).lte('week_start', to).order('week_start').order('item_id').range(a, b)),
         ['qty', 'amount'],
       ) as ItemSalesWeek[],
   })
@@ -357,8 +375,8 @@ export const useItemSalesRows = (from: string, to: string) => {
     queryKey: ['item_sales', 'rows', biz, from, to],
     queryFn: async () =>
       money(
-        await run(supabase.from('item_sales').select('*').eq('business_id', biz)
-          .gte('period_start', from).lte('period_start', to).order('period_start', { ascending: false })),
+        await runAll((a, b) => supabase.from('item_sales').select('*').eq('business_id', biz)
+          .gte('period_start', from).lte('period_start', to).order('period_start', { ascending: false }).order('id').range(a, b)),
         ['qty', 'amount'],
       ) as ItemSale[],
   })
@@ -368,7 +386,7 @@ export const useItemAliases = () => {
   const biz = useBusinessId()
   return useQuery({
     queryKey: ['item_aliases', biz],
-    queryFn: async () => (await run(supabase.from('item_aliases').select('*').eq('business_id', biz))) as ItemAlias[],
+    queryFn: async () => (await runAll((a, b) => supabase.from('item_aliases').select('*').eq('business_id', biz).order('alias').range(a, b))) as ItemAlias[],
   })
 }
 

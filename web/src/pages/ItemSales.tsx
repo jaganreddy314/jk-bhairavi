@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useEarliestSale, useItemSalesRows, useItemSalesWeekly, useSaveItemSales, useStockGroups, useStockItems } from '../lib/api'
 import { addDays, fmtDay, fmtShort, weekStart } from '../lib/dates'
 import { aud, audRound, audShort, cents, pct } from '../lib/format'
@@ -9,7 +9,7 @@ import type { ItemSale, ItemSalesWeek, StockGroup, StockItem } from '../lib/type
 import { RangeFilter, useRange } from '../components/RangeFilter'
 import { axisProps, ChartCard, TipBox, usePalette } from '../components/charts'
 import { bySection, CategoryChips, FoodTabs, sectionKey } from '../components/catalogue'
-import { DeleteButton, Empty, ErrorBox, Loading } from '../components/ui'
+import { DeleteButton, Empty, ErrorBox, Loading, Segmented } from '../components/ui'
 
 export default function ItemSales() {
   const earliest = useEarliestSale().data ?? null
@@ -50,6 +50,7 @@ const weeksIn = (from: string, to: string) => {
 
 interface ItemTotal { item: StockItem; qty: number; amount: number; byWeek: Map<string, ItemSalesWeek> }
 type Sort = 'amount' | 'qty' | 'name'
+type Show = 'all' | 'sold' | 'unsold'
 
 function Body({ rows, items, groups, weeks, entries }: {
   rows: ItemSalesWeek[]; items: StockItem[]; groups: StockGroup[]; weeks: string[]; entries: ItemSale[]
@@ -58,6 +59,9 @@ function Body({ rows, items, groups, weeks, entries }: {
   const [cat, setCat] = useState('all')
   const [sort, setSort] = useState<Sort>('amount')
   const [open, setOpen] = useState<string | null>(null)
+  const [show, setShow] = useState<Show>('all')
+  const [week, setWeek] = useState<string | null>(null)
+  const [q, setQ] = useState('')
 
   if (rows.length === 0)
     return (
@@ -67,35 +71,55 @@ function Body({ rows, items, groups, weeks, entries }: {
       </Empty>
     )
 
+  // Only weeks somebody entered figures for can say what didn't sell.
+  const weeksWithData = weeks.filter((w) => rows.some((r) => r.week_start === w))
+  const pickedWeek = week && weeksWithData.includes(week) ? week : null
+  const inPeriod = (w: string) => !pickedWeek || w === pickedWeek
+
+  // Every active product, sold or not — plus a hidden one if it still sold something.
   const itemById = new Map(items.map((i) => [i.id, i]))
-  const totals = new Map<string, ItemTotal>()
+  const totals = new Map<string, ItemTotal>(
+    items.filter((i) => i.active).map((i) => [i.id, { item: i, qty: 0, amount: 0, byWeek: new Map() }]),
+  )
   for (const r of rows) {
     const item = itemById.get(r.item_id)
     if (!item) continue
     const t = totals.get(r.item_id) ?? { item, qty: 0, amount: 0, byWeek: new Map() }
-    t.qty += r.qty
-    t.amount = cents(t.amount + r.amount)
     t.byWeek.set(r.week_start, r)
+    if (inPeriod(r.week_start)) {
+      t.qty += r.qty
+      t.amount = cents(t.amount + r.amount)
+    }
     totals.set(r.item_id, t)
   }
 
-  const sold = [...totals.values()]
-  const sections = bySection(sold.map((t) => t.item), groups)
+  const isSold = (t: ItemTotal) => t.qty > 0 || t.amount > 0
+  const everything = [...totals.values()]
+  const needle = q.trim().toLowerCase()
+  const searched = everything.filter((t) => !needle || t.item.name.toLowerCase().includes(needle))
+  const shown = searched.filter((t) => show === 'all' || (show === 'sold') === isSold(t))
+  const sections = bySection(shown.map((t) => t.item), groups)
   const current = sections.some((s) => s.key === cat) ? cat : 'all'
-  const inView = sold.filter((t) => current === 'all' || sectionKey(t.item) === current)
+  const inCat = (t: ItemTotal) => current === 'all' || sectionKey(t.item) === current
+  const inView = shown.filter(inCat)
   const sorted = [...inView].sort((a, b) =>
-    sort === 'name' ? a.item.name.localeCompare(b.item.name) : sort === 'qty' ? b.qty - a.qty : b.amount - a.amount)
+    sort === 'name' ? a.item.name.localeCompare(b.item.name)
+      : (sort === 'qty' ? b.qty - a.qty : b.amount - a.amount) || a.item.name.localeCompare(b.item.name))
 
-  const viewAmount = cents(inView.reduce((s, t) => s + t.amount, 0))
-  const viewQty = inView.reduce((s, t) => s + t.qty, 0)
-  const best = [...inView].sort((a, b) => b.amount - a.amount)[0]
-  const weeksWithData = weeks.filter((w) => inView.some((t) => t.byWeek.has(w)))
+  // Tiles count the chosen category across sold and unsold alike, whatever the list is showing.
+  const catAll = searched.filter(inCat)
+  const catSold = catAll.filter(isSold)
+  const viewAmount = cents(catSold.reduce((s, t) => s + t.amount, 0))
+  const viewQty = catSold.reduce((s, t) => s + t.qty, 0)
+  const best = [...catSold].sort((a, b) => b.amount - a.amount)[0]
+  const periodWeeks = pickedWeek ? 1 : weeksWithData.length
   const focus = open ? totals.get(open) : undefined
   const lastWeek = weeksWithData[weeksWithData.length - 1]
   const prevWeek = weeksWithData[weeksWithData.length - 2]
+  const soldCount = searched.filter(isSold).length
 
   const chart = weeks.map((w) => {
-    const list = focus ? [focus] : inView
+    const list = focus ? [focus] : catAll
     return {
       week: w,
       label: fmtShort(w),
@@ -106,20 +130,34 @@ function Body({ rows, items, groups, weeks, entries }: {
 
   return (
     <div className="grid gap-4">
+      {weeksWithData.length > 1 && (
+        <div role="group" aria-label="Week" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+          <button type="button" className="chip shrink-0" aria-pressed={!pickedWeek} onClick={() => setWeek(null)}>All weeks</button>
+          {weeksWithData.map((w) => (
+            <button key={w} type="button" className="chip shrink-0" aria-pressed={pickedWeek === w} onClick={() => setWeek(w)}>
+              Week of {fmtShort(w)}
+            </button>
+          ))}
+        </div>
+      )}
+
       <CategoryChips
         sections={sections.map((s) => ({ key: s.key, label: s.label, count: s.items.length }))}
-        value={current} onChange={(k) => { setCat(k); setOpen(null) }} total={sold.length} />
+        value={current} onChange={(k) => { setCat(k); setOpen(null) }} total={shown.length} />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="Sales" value={audRound(viewAmount)} sub={`${weeksWithData.length} ${weeksWithData.length === 1 ? 'week' : 'weeks'} with figures`} />
-        <Tile label="Units sold" value={qtyStr(Math.round(viewQty))} sub={weeksWithData.length ? `${qtyStr(Math.round(viewQty / weeksWithData.length))} a week` : ''} />
-        <Tile label="Products sold" value={String(inView.filter((t) => t.qty > 0 || t.amount > 0).length)} sub={`of ${items.filter((i) => i.active).length} in the catalogue`} />
+        <Tile label={pickedWeek ? `Sales, week of ${fmtShort(pickedWeek)}` : 'Sales'} value={audRound(viewAmount)}
+          sub={pickedWeek ? `${fmtDay(pickedWeek)} – ${fmtDay(addDays(pickedWeek, 6))}` : `${periodWeeks} ${periodWeeks === 1 ? 'week' : 'weeks'} with figures`} />
+        <Tile label="Units sold" value={qtyStr(Math.round(viewQty))} sub={periodWeeks > 1 ? `${qtyStr(Math.round(viewQty / periodWeeks))} a week` : ''} />
+        <Tile label="Products sold" value={String(catSold.length)} sub={`${catAll.length - catSold.length} didn’t sell · ${catAll.length} in all`} />
         <Tile label="Best seller" value={best?.item.name ?? '—'} sub={best ? `${audRound(best.amount)} · ${pct(viewAmount ? best.amount / viewAmount : 0)} of sales` : ''} small />
       </section>
 
       <ChartCard
         title={focus ? `${focus.item.name} by week` : 'Sales by week'}
-        subtitle={focus ? <button type="button" className="text-accent" onClick={() => setOpen(null)}>← Back to all products</button> : 'Tap a product below to see it on its own.'}
+        subtitle={focus
+          ? <button type="button" className="text-accent" onClick={() => setOpen(null)}>← Back to all products</button>
+          : 'Tap a week’s bar to see just that week.'}
       >
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chart} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
@@ -133,46 +171,71 @@ function Body({ rows, items, groups, weeks, entries }: {
                 { label: 'Units', value: qtyStr(d.qty) },
               ]} /> : null
             }} />
-            <Bar dataKey="amount" fill={p['c-sales']} radius={[3, 3, 0, 0]} maxBarSize={40} />
+            <Bar dataKey="amount" radius={[3, 3, 0, 0]} maxBarSize={40} cursor="pointer"
+              onClick={(_, i) => { const w = chart[i]?.week; if (w && weeksWithData.includes(w)) setWeek(pickedWeek === w ? null : w) }}>
+              {chart.map((c) => (
+                <Cell key={c.week} fill={p['c-sales']} fillOpacity={!pickedWeek || pickedWeek === c.week ? 1 : 0.35} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
 
       <section className="card p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">By product</h2>
+          <h2 className="font-semibold">By product{pickedWeek ? ` · week of ${fmtShort(pickedWeek)}` : ''}</h2>
           <div role="group" aria-label="Sort by" className="flex gap-1.5">
             {([['amount', 'Sales'], ['qty', 'Units'], ['name', 'A–Z']] as const).map(([v, l]) => (
               <button key={v} type="button" className="chip !py-1 !text-xs" aria-pressed={sort === v} onClick={() => setSort(v)}>{l}</button>
             ))}
           </div>
         </div>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Segmented ariaLabel="Which products" value={show} onChange={setShow} options={[
+            { value: 'all', label: `All ${searched.length}` },
+            { value: 'sold', label: `Sold ${soldCount}` },
+            { value: 'unsold', label: `Not sold ${searched.length - soldCount}` },
+          ]} />
+          <input type="search" aria-label="Search products" className="field !w-auto min-w-40 flex-1 !py-1.5 !text-sm" placeholder="Search products…"
+            value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
         <div className="grid grid-cols-[1fr_4.5rem_5.5rem] gap-2 border-b border-line py-1 text-xs text-muted sm:grid-cols-[1fr_4.5rem_6rem_4.5rem_5rem]">
           <span>Product</span><span className="text-right">Units</span><span className="text-right">Sales</span>
           <span className="hidden text-right sm:block">Share</span>
           <span className="hidden text-right sm:block" title={lastWeek && prevWeek ? `Week of ${fmtShort(lastWeek)} against week of ${fmtShort(prevWeek)}` : undefined}>Last week</span>
         </div>
+        {sorted.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted">
+            {show === 'unsold' ? 'Everything here sold something.' : show === 'sold' ? 'Nothing here sold.' : 'No products match.'}
+          </p>
+        )}
         <ul className="divide-y divide-line">
           {sorted.map((t) => {
             const isOpen = open === t.item.id
+            const sold = isSold(t)
             const share = viewAmount ? t.amount / viewAmount : 0
             return (
               <li key={t.item.id}>
                 <button type="button" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : t.item.id)}
-                  className={`grid w-full grid-cols-[1fr_4.5rem_5.5rem] items-center gap-2 py-2 text-left sm:grid-cols-[1fr_4.5rem_6rem_4.5rem_5rem] ${isOpen ? 'bg-surface-2' : ''}`}>
+                  className={`grid w-full grid-cols-[1fr_4.5rem_5.5rem] items-center gap-2 py-2 text-left sm:grid-cols-[1fr_4.5rem_6rem_4.5rem_5rem] ${isOpen ? 'bg-surface-2' : ''} ${sold ? '' : 'text-muted'}`}>
                   <span className="min-w-0">
-                    <span className="block truncate font-medium">{t.item.name}</span>
-                    {/* A bar for share of sales, so the list reads at a glance. */}
-                    <span className="mt-1 block h-1 rounded-full bg-surface-2">
-                      <span className="block h-1 rounded-full" style={{ width: `${Math.max(2, share * 100)}%`, background: p['c-sales'] }} />
+                    <span className="block truncate font-medium">
+                      {t.item.name}
+                      {!sold && <span className="ml-2 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold">No sales</span>}
                     </span>
+                    {/* A bar for share of sales, so the list reads at a glance. */}
+                    {sold && (
+                      <span className="mt-1 block h-1 rounded-full bg-surface-2">
+                        <span className="block h-1 rounded-full" style={{ width: `${Math.max(2, share * 100)}%`, background: p['c-sales'] }} />
+                      </span>
+                    )}
                   </span>
                   <span className="num text-right text-sm">{qtyStr(t.qty)}</span>
-                  <span className="num text-right text-sm font-semibold">{aud(t.amount)}</span>
-                  <span className="num hidden text-right text-sm text-ink-2 sm:block">{pct(share)}</span>
+                  <span className={`num text-right text-sm ${sold ? 'font-semibold' : ''}`}>{aud(t.amount)}</span>
+                  <span className="num hidden text-right text-sm text-ink-2 sm:block">{sold ? pct(share) : '—'}</span>
                   <span className="hidden text-right sm:block"><Trend now={lastWeek ? t.byWeek.get(lastWeek)?.qty ?? 0 : 0} before={prevWeek ? t.byWeek.get(prevWeek)?.qty ?? 0 : 0} /></span>
                 </button>
-                {isOpen && <WeekBreakdown total={t} weeks={weeks} />}
+                {isOpen && <WeekBreakdown total={t} weeks={weeksWithData.length ? weeks.filter((w) => w >= weeksWithData[0]) : weeks} />}
               </li>
             )
           })}

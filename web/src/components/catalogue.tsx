@@ -25,14 +25,32 @@ export const sectionKey = (i: StockItem) => i.group_id ?? NO_SECTION
 export interface Section { key: string; label: string; items: StockItem[] }
 
 /** Items split by section, in count-sheet order, sorted by name inside. Empty sections are left out. */
-export function bySection(items: StockItem[], groups: StockGroup[]): Section[] {
-  const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name))
+export function bySection(items: StockItem[], groups: StockGroup[], order: (a: StockItem, b: StockItem) => number = byName): Section[] {
+  const sorted = [...items].sort(order)
   const out: Section[] = [...groups]
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
     .map((g) => ({ key: g.id, label: g.name, items: sorted.filter((i) => i.group_id === g.id) }))
   const known = new Set(groups.map((g) => g.id))
   out.push({ key: NO_SECTION, label: 'Other items', items: sorted.filter((i) => !i.group_id || !known.has(i.group_id)) })
   return out.filter((s) => s.items.length > 0)
+}
+
+const byName = (a: StockItem, b: StockItem) => a.name.localeCompare(b.name)
+
+/**
+ * The order you go through when ordering from a supplier: their items in the arranged
+ * order (Catalogue → Supplier order), then anything else alphabetically.
+ */
+export const supplierOrder = (supplierId: string | undefined) => (a: StockItem, b: StockItem) =>
+  Number(a.supplier_id !== supplierId) - Number(b.supplier_id !== supplierId) ||
+  (a.supplier_id === supplierId ? a.supplier_sort - b.supplier_sort : 0) ||
+  byName(a, b)
+
+/** Picked lines in walk-through order, so the order — and the text sent to the supplier — reads the same way. */
+export function linesInOrder(picks: Picks, items: StockItem[], supplierId: string | undefined) {
+  const byId = new Map(items.map((i) => [i.id, i]))
+  const order = supplierOrder(supplierId)
+  return pickedLines(picks).sort((a, b) => order(byId.get(a.item_id)!, byId.get(b.item_id)!))
 }
 
 /** One chip per category, plus “All”. Scrolls sideways on a phone rather than wrapping into a wall. */
@@ -98,13 +116,17 @@ export function ItemPicker({
 
   const needle = q.trim().toLowerCase()
   const pool = (scope === 'theirs' ? theirs : active).filter((i) => !needle || i.name.toLowerCase().includes(needle))
-  const sections = bySection(pool, groups)
+  // One supplier's own list reads in their arranged order, as a single run; everything else by category.
+  const walk = scope === 'theirs' && !!supplier
+  const order = walk ? supplierOrder(supplier.id) : byName
+  const sections = bySection(pool, groups, order)
   const pickedHere = pool.filter((i) => qtyOf(i.id) > 0)
   // A chip that has been emptied by the search or the scope falls back to “All”.
   const current = cat === 'picked' || sections.some((s) => s.key === cat) ? cat : 'all'
+  const flat = (list: StockItem[]): Section[] => (list.length ? [{ key: 'flat', label: '', items: [...list].sort(order) }] : [])
   const shown =
-    current === 'all' ? sections
-      : current === 'picked' ? bySection(pickedHere, groups)
+    current === 'all' ? (walk ? flat(pool) : sections)
+      : current === 'picked' ? (walk ? flat(pickedHere) : bySection(pickedHere, groups))
         : sections.filter((s) => s.key === current)
 
   return (
@@ -142,7 +164,7 @@ export function ItemPicker({
       )}
       {shown.map((s) => (
         <div key={s.key} className="mt-3">
-          {(current === 'all' || current === 'picked') && (
+          {s.label && (current === 'all' || current === 'picked') && (
             <h3 className="sticky top-14 z-10 -mx-1 bg-surface px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted">{s.label}</h3>
           )}
           <ul className="divide-y divide-line">

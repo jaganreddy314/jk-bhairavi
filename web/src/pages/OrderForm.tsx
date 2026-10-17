@@ -10,7 +10,7 @@ import { fmtDay, todayStr } from '../lib/dates'
 import { aud, parseMoney } from '../lib/format'
 import { lineTotal, orderText, orderTotal, qtyStr } from '../lib/purchasing'
 import type { ItemCost, PaidVia, PurchaseOrder, PurchaseOrderLine, StockGroup, StockItem, Supplier } from '../lib/types'
-import { ItemPicker, PickSummary, pickedLines, type Picks } from '../components/catalogue'
+import { ItemPicker, linesInOrder, PickSummary, type Picks } from '../components/catalogue'
 import { DeleteButton, ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
 import { StatusPill } from './Orders'
 
@@ -40,7 +40,7 @@ function NewOrder() {
 
   const active = (suppliers.data ?? []).filter((s) => s.active)
   const supplier = active.find((s) => s.id === supplierId)
-  const lines = pickedLines(picks)
+  const lines = linesInOrder(picks, items.data ?? [], supplierId)
   const busy = save.isPending || addLines.isPending
 
   async function create() {
@@ -354,7 +354,7 @@ function AddItems({
   const add = useAddOrderLines()
   const [mode, setMode] = useState<'closed' | 'items' | 'oneoff'>(startOpen ? 'items' : 'closed')
   const [picks, setPicks] = useState<Picks>({})
-  const lines = pickedLines(picks)
+  const lines = linesInOrder(picks, items, supplier?.id)
 
   if (mode === 'closed')
     return (

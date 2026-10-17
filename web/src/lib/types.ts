@@ -148,6 +148,8 @@ export interface StockItem {
   /** Fallback cost per unit; the last price paid wins when there is one. */
   unit_cost: number | null
   active: boolean
+  /** Position in its supplier's list — the order you go through when ordering. */
+  supplier_sort: number
 }
 
 export interface PurchaseOrder {

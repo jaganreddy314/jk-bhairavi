@@ -306,6 +306,7 @@ create table stock_items (
   -- Four decimals: per-kg and per-each prices aren't always whole cents.
   unit_cost numeric(12,4),
   active boolean not null default true,
+  supplier_sort int not null default 0,     -- position in its supplier's list when ordering
   constraint stock_items_business_name_key unique (business_id, name)
 );
 create index on stock_items (business_id);

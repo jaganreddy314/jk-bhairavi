@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useBulkUpdate, useItemCosts, useSave, useStockGroups, useStockItems, useSuppliers } from '../lib/api'
+import { useBulkUpdate, useItemCosts, useSave, useSetItemOrder, useStockGroups, useStockItems, useSuppliers } from '../lib/api'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { aud } from '../lib/format'
-import type { StockItem } from '../lib/types'
-import { bySection, CategoryChips, FoodTabs, NO_SECTION } from '../components/catalogue'
+import type { StockGroup, StockItem, Supplier } from '../lib/types'
+import { bySection, CategoryChips, FoodTabs, NO_SECTION, supplierOrder } from '../components/catalogue'
 import { RowForm, TableEditor, type Field } from '../components/TableEditor'
 import { ErrorBox, Loading, Segmented } from '../components/ui'
 
@@ -26,13 +26,13 @@ const UNIT_OPTIONS = [
   { value: 'bottle', label: 'bottle' },
 ]
 
-type Tab = 'products' | 'suppliers' | 'sections'
+type Tab = 'products' | 'order' | 'suppliers' | 'sections'
 
 /** What the shop buys and counts: products, who supplies them, and where they live. */
 export default function Catalogue() {
   const [params, setParams] = useSearchParams()
   const raw = params.get('tab')
-  const tab: Tab = raw === 'suppliers' || raw === 'sections' ? raw : 'products'
+  const tab: Tab = raw === 'suppliers' || raw === 'sections' || raw === 'order' ? raw : 'products'
 
   return (
     <div>
@@ -44,12 +44,14 @@ export default function Catalogue() {
           onChange={(t) => setParams(t === 'products' ? {} : { tab: t }, { replace: true })}
           options={[
             { value: 'products', label: 'Products' },
+            { value: 'order', label: 'Supplier order' },
             { value: 'suppliers', label: 'Suppliers' },
             { value: 'sections', label: 'Categories' },
           ]}
         />
       </div>
       {tab === 'products' && <Products />}
+      {tab === 'order' && <SupplierOrder />}
       {tab === 'suppliers' && <Suppliers />}
       {tab === 'sections' && <Sections />}
     </div>
@@ -297,6 +299,118 @@ function Price({ unit, cost, paid }: { unit: string; cost: number | null; paid: 
       {value ? <>{aud(value)}<span className="text-muted md:hidden"> / {unit}</span></> : <span className="text-muted">no price</span>}
       {paid && cost && Math.abs(paid - cost) > 0.004 ? <span className="block text-[11px] text-muted">last paid</span> : null}
     </span>
+  )
+}
+
+/**
+ * Arrange each supplier's items in the order you go through them — their price list, or
+ * the shelves. New orders list the items this way, and the order sent to the supplier follows it.
+ */
+function SupplierOrder() {
+  const items = useStockItems()
+  const groups = useStockGroups()
+  const suppliers = useSuppliers()
+  const [supplierId, setSupplierId] = useState('')
+
+  if (items.isLoading || groups.isLoading || suppliers.isLoading) return <Loading />
+
+  const all = (items.data ?? []).filter((i) => i.active)
+  const withItems = (suppliers.data ?? []).filter((s) => s.active && all.some((i) => i.supplier_id === s.id))
+  const supplier = withItems.find((s) => s.id === supplierId) ?? withItems[0]
+
+  return (
+    <section className="card p-4">
+      <p className="mb-3 text-sm text-muted">
+        Put each supplier’s products in the order you go through them when ordering. New orders list them this way, and so
+        does the order you send.
+      </p>
+      {!supplier ? (
+        <p className="py-6 text-center text-sm text-muted">
+          No products have a supplier yet. Set “Usually from” on the Products tab — several at once with the tick boxes.
+        </p>
+      ) : (
+        <>
+          <label className="label" htmlFor="so-supplier">Supplier</label>
+          <select id="so-supplier" className="field mb-3 !w-auto !py-2" value={supplier.id} onChange={(e) => setSupplierId(e.target.value)}>
+            {withItems.map((s) => (
+              <option key={s.id} value={s.id}>{s.name} ({all.filter((i) => i.supplier_id === s.id).length})</option>
+            ))}
+          </select>
+          {/* Remount per supplier, or when its products change, so the draft starts from what's saved.
+              Not on every refetch — coming back to the tab mustn't throw away an unsaved arrangement. */}
+          <Arrange key={supplier.id + all.filter((i) => i.supplier_id === supplier.id).map((i) => i.id).sort().join()} supplier={supplier} items={all.filter((i) => i.supplier_id === supplier.id)} groups={groups.data ?? []} />
+        </>
+      )}
+    </section>
+  )
+}
+
+function Arrange({ supplier, items, groups }: { supplier: Supplier; items: StockItem[]; groups: StockGroup[] }) {
+  const saveOrder = useSetItemOrder()
+  const saved = [...items].sort(supplierOrder(supplier.id))
+  const [ids, setIds] = useState(() => saved.map((i) => i.id))
+  const [dragging, setDragging] = useState<string | null>(null)
+  const byId = new Map(items.map((i) => [i.id, i]))
+  const groupName = (id: string | null) => groups.find((g) => g.id === id)?.name
+  const changed = ids.some((id, n) => id !== saved[n].id)
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= ids.length || from === to) return
+    const next = [...ids]
+    next.splice(to, 0, next.splice(from, 1)[0])
+    setIds(next)
+  }
+  const sortBy = (key: (i: StockItem) => string) =>
+    setIds([...ids].sort((a, b) => key(byId.get(a)!).localeCompare(key(byId.get(b)!)) || byId.get(a)!.name.localeCompare(byId.get(b)!.name)))
+
+  return (
+    <div>
+      <ErrorBox error={saveOrder.error} />
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted">Start from:</span>
+        <button type="button" className="btn btn-sm" onClick={() => sortBy((i) => i.name)}>A–Z</button>
+        <button type="button" className="btn btn-sm" onClick={() => sortBy((i) => {
+          const g = groups.find((x) => x.id === i.group_id)
+          return g ? String(g.sort).padStart(6, '0') : '999999'
+        })}>By category</button>
+      </div>
+
+      <ol className="divide-y divide-line">
+        {ids.map((id, n) => {
+          const i = byId.get(id)!
+          return (
+            <li key={id} draggable
+              onDragStart={() => setDragging(id)}
+              onDragEnd={() => setDragging(null)}
+              onDragOver={(e) => { e.preventDefault(); if (dragging && dragging !== id) move(ids.indexOf(dragging), n) }}
+              className={`flex items-center gap-2 py-2 ${dragging === id ? 'opacity-40' : ''}`}>
+              <span className="hidden cursor-grab select-none px-1 text-muted md:inline" aria-hidden>⠿</span>
+              <span className="num w-7 shrink-0 text-right text-sm text-muted">{n + 1}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{i.name}</span>
+                <span className="block truncate text-xs text-muted">{i.unit}{groupName(i.group_id) ? ` · ${groupName(i.group_id)}` : ''}</span>
+              </span>
+              <span className="flex shrink-0 gap-1">
+                <button type="button" className="btn btn-sm !h-9 !w-9 !p-0" aria-label={`Move ${i.name} to the top`} disabled={n === 0} onClick={() => move(n, 0)}>⤒</button>
+                <button type="button" className="btn btn-sm !h-9 !w-9 !p-0" aria-label={`Move ${i.name} up`} disabled={n === 0} onClick={() => move(n, n - 1)}>↑</button>
+                <button type="button" className="btn btn-sm !h-9 !w-9 !p-0" aria-label={`Move ${i.name} down`} disabled={n === ids.length - 1} onClick={() => move(n, n + 1)}>↓</button>
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+
+      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 mt-3 flex items-center gap-2 rounded-xl border border-line bg-surface p-3 shadow-lg md:bottom-4">
+        <span className="min-w-0 flex-1 text-sm text-muted">{changed ? 'Not saved yet' : `${supplier.name}’s order is saved`}</span>
+        <button type="button" className="btn" disabled={!changed} onClick={() => setIds(saved.map((i) => i.id))}>Undo</button>
+        <button type="button" className="btn btn-primary" disabled={!changed || saveOrder.isPending}
+          onClick={() => saveOrder.mutate(
+            ids.map((id, n) => ({ id, supplier_sort: (n + 1) * 10 })).filter((r) => byId.get(r.id)!.supplier_sort !== r.supplier_sort),
+          )}>
+          {saveOrder.isPending ? 'Saving…' : 'Save order'}
+        </button>
+      </div>
+    </div>
   )
 }
 

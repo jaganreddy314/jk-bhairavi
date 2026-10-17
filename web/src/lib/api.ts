@@ -191,6 +191,13 @@ export const useAddOrderLines = () =>
 export const useBulkUpdate = (tableName: string) =>
   useWrite<{ ids: string[]; patch: Row }>(tableName, ({ ids, patch }) => supabase.from(tableName).update(patch).in('id', ids))
 
+/** Save a supplier's item order: each id gets its position. Only rows whose position changed are sent. */
+export const useSetItemOrder = () =>
+  useWrite<{ id: string; supplier_sort: number }[]>('stock_items', async (rows) => {
+    const results = await Promise.all(rows.map((r) => supabase.from('stock_items').update({ supplier_sort: r.supplier_sort }).eq('id', r.id)))
+    return results.find((r) => r.error) ?? { data: null, error: null }
+  })
+
 export const useUpsertSales = () => {
   const biz = useBusinessId()
   return useWrite<Omit<SalesDay, 'id' | 'business_id'>[]>('sales_days', (rows) =>

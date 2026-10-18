@@ -683,8 +683,9 @@ create table item_sales (
   item_id uuid not null references stock_items(id) on delete cascade,
   period_start date not null,
   period_end date not null,
-  qty numeric(12,3) not null default 0 check (qty >= 0),
-  amount numeric(12,2) not null default 0 check (amount >= 0),
+  -- Negative when refunds outweigh sales that period (migration 009).
+  qty numeric(12,3) not null default 0,
+  amount numeric(12,2) not null default 0,
   created_at timestamptz not null default now(),
   constraint item_sales_period check (
     period_end = period_start
@@ -750,7 +751,7 @@ begin
   select p_business, (r->>'item_id')::uuid, p_start, p_end,
          coalesce((r->>'qty')::numeric, 0), coalesce((r->>'amount')::numeric, 0)
   from jsonb_array_elements(p_rows) r
-  where coalesce((r->>'qty')::numeric, 0) > 0 or coalesce((r->>'amount')::numeric, 0) > 0;
+  where coalesce((r->>'qty')::numeric, 0) <> 0 or coalesce((r->>'amount')::numeric, 0) <> 0;
   get diagnostics n = row_count;
   return n;
 end $$;

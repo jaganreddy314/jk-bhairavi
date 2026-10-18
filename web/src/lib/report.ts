@@ -82,9 +82,10 @@ function columnCount(rows: ReportRow[]): number {
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? 0
 }
 
+/** A row's number in a column. The sign is kept: a refund outweighing the week's sales is negative. */
 export const valueAt = (row: ReportRow, col: number) => {
   const v = row.nums[col]
-  return v == null || !Number.isFinite(v) ? 0 : Math.abs(v)
+  return v == null || !Number.isFinite(v) ? 0 : v
 }
 
 /**

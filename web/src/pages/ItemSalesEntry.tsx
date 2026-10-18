@@ -102,7 +102,7 @@ function ManualEntry({ start, end, items, groups, existing }: {
   const shown = current === 'all' ? sections : sections.filter((s) => s.key === current)
   const lines = Object.entries(vals)
     .map(([item_id, v]) => ({ item_id, qty: parseMoney(v.qty), amount: parseMoney(v.amount) }))
-    .filter((l) => l.qty > 0 || l.amount > 0)
+    .filter((l) => l.qty !== 0 || l.amount !== 0)
   const set = (id: string, k: 'qty' | 'amount', v: string) => setVals({ ...vals, [id]: { ...(vals[id] ?? { qty: '', amount: '' }), [k]: v } })
 
   return (

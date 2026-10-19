@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  useAddOrderLines, useItemCosts, useOrderLines, usePurchaseOrder, useReceiveOrder, useRemove, useReopenOrder,
+  useAddOrderLines, useItemCosts, useItemSuppliers, useOrderLines, usePurchaseOrder, useReceiveOrder, useRemove, useReopenOrder,
   useSave, useStockGroups, useStockItems, useSuppliers,
 } from '../lib/api'
 import { useBusiness } from '../lib/business'
@@ -10,7 +10,7 @@ import { fmtDay, todayStr } from '../lib/dates'
 import { aud, parseMoney } from '../lib/format'
 import { lineTotal, orderText, orderTotal, qtyStr } from '../lib/purchasing'
 import type { ItemCost, PaidVia, PurchaseOrder, PurchaseOrderLine, StockGroup, StockItem, Supplier } from '../lib/types'
-import { ItemPicker, linesInOrder, PickSummary, type Picks } from '../components/catalogue'
+import { ItemPicker, linksFor, linesInOrder, PickSummary, type Picks } from '../components/catalogue'
 import { DeleteButton, ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
 import { StatusPill } from './Orders'
 
@@ -31,6 +31,7 @@ function NewOrder() {
   const items = useStockItems()
   const groups = useStockGroups()
   const costs = useItemCosts()
+  const itemSuppliers = useItemSuppliers()
   const save = useSave('purchase_orders')
   const addLines = useAddOrderLines()
   const [supplierId, setSupplierId] = useState('')
@@ -40,7 +41,8 @@ function NewOrder() {
 
   const active = (suppliers.data ?? []).filter((s) => s.active)
   const supplier = active.find((s) => s.id === supplierId)
-  const lines = linesInOrder(picks, items.data ?? [], supplierId)
+  const links = linksFor(itemSuppliers.data ?? [], supplierId)
+  const lines = linesInOrder(picks, items.data ?? [], links)
   const busy = save.isPending || addLines.isPending
 
   async function create() {
@@ -85,7 +87,7 @@ function NewOrder() {
         <section className="card p-4">
           <h2 className="mb-3 font-semibold">What do you need?</h2>
           {items.isLoading || groups.isLoading ? <Loading /> : (
-            <ItemPicker key={supplier.id} supplier={supplier} items={items.data ?? []} groups={groups.data ?? []} costs={costs.data ?? []}
+            <ItemPicker key={supplier.id} supplier={supplier} items={items.data ?? []} groups={groups.data ?? []} costs={costs.data ?? []} links={links}
               picks={picks} onChange={setPicks} />
           )}
           <PickSummary picks={picks}>
@@ -354,7 +356,9 @@ function AddItems({
   const add = useAddOrderLines()
   const [mode, setMode] = useState<'closed' | 'items' | 'oneoff'>(startOpen ? 'items' : 'closed')
   const [picks, setPicks] = useState<Picks>({})
-  const lines = linesInOrder(picks, items, supplier?.id)
+  const itemSuppliers = useItemSuppliers()
+  const links = linksFor(itemSuppliers.data ?? [], supplier?.id)
+  const lines = linesInOrder(picks, items, links)
 
   if (mode === 'closed')
     return (
@@ -369,7 +373,7 @@ function AddItems({
   return (
     <div className="mt-3 rounded-xl border border-line p-3">
       <ErrorBox error={add.error} />
-      <ItemPicker supplier={supplier} items={items} groups={groups} costs={costs} exclude={alreadyOn} picks={picks} onChange={setPicks} />
+      <ItemPicker supplier={supplier} items={items} groups={groups} costs={costs} links={links} exclude={alreadyOn} picks={picks} onChange={setPicks} />
       <PickSummary picks={picks}>
         <button type="button" className="btn" onClick={() => { setPicks({}); setMode('closed') }}>Close</button>
         <button type="button" className="btn btn-primary" disabled={!lines.length || add.isPending}

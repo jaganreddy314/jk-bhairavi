@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
-  ItemAlias, ItemSale, ItemSalesWeek,
+  ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -162,13 +162,15 @@ const DEPENDENTS: Record<string, string[]> = {
   business_users: ['business_users'],
   stock_groups: ['stock_groups', 'stock_items'],
   // An item's name, cost or group shows up on count sheets and order lines alike.
-  stock_items: ['stock_items', 'item_costs', 'stock_count_lines', 'order_lines'],
+  stock_items: ['stock_items', 'item_costs', 'stock_count_lines', 'order_lines', 'item_suppliers'],
   purchase_orders: ['purchase_orders', 'purchase_order'],
   // A line changes the order's total, and receiving reprices future sheets.
-  purchase_order_lines: ['order_lines', 'purchase_orders', 'item_costs'],
+  // …and ordering a product from a supplier links them and sets that supplier's price.
+  purchase_order_lines: ['order_lines', 'purchase_orders', 'item_costs', 'item_suppliers'],
   stock_counts: ['stock_counts', 'stock_count', 'food_cost'],
   // A new product can be added from an import, and its sales go with it.
   item_sales: ['item_sales'],
+  item_suppliers: ['item_suppliers'],
   stock_count_lines: ['stock_count_lines', 'stock_counts', 'food_cost'],
 }
 
@@ -215,10 +217,22 @@ export const useBulkUpdate = (tableName: string) =>
 
 /** Save a supplier's item order: each id gets its position. Only rows whose position changed are sent. */
 export const useSetItemOrder = () =>
-  useWrite<{ id: string; supplier_sort: number }[]>('stock_items', async (rows) => {
-    const results = await Promise.all(rows.map((r) => supabase.from('stock_items').update({ supplier_sort: r.supplier_sort }).eq('id', r.id)))
+  useWrite<{ supplierId: string; rows: { item_id: string; sort: number }[] }>('item_suppliers', async ({ supplierId, rows }) => {
+    const results = await Promise.all(rows.map((r) =>
+      supabase.from('item_suppliers').update({ sort: r.sort }).eq('item_id', r.item_id).eq('supplier_id', supplierId)))
     return results.find((r) => r.error) ?? { data: null, error: null }
   })
+
+/** Link a product to a supplier, or change that supplier's carton size or item code. */
+export const useSaveItemSupplier = () => {
+  const biz = useBusinessId()
+  return useWrite<{ item_id: string; supplier_id: string; pack_size?: number; supplier_code?: string | null }>('item_suppliers', (v) =>
+    supabase.from('item_suppliers').upsert({ ...v, business_id: biz }, { onConflict: 'item_id,supplier_id' }))
+}
+
+export const useRemoveItemSupplier = () =>
+  useWrite<{ item_id: string; supplier_id: string }>('item_suppliers', (v) =>
+    supabase.from('item_suppliers').delete().eq('item_id', v.item_id).eq('supplier_id', v.supplier_id))
 
 export const useUpsertSales = () => {
   const biz = useBusinessId()
@@ -268,6 +282,20 @@ export const useCreateBusiness = () => {
 
 export const useStockGroups = scopedTable<StockGroup>('stock_groups', 'sort')
 export const useStockItems = scopedTable<StockItem>('stock_items', 'name', ['unit_cost'])
+
+/** Every product–supplier link, with that supplier's carton and what they last charged. */
+export const useItemSuppliers = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['item_suppliers', biz],
+    queryFn: async () =>
+      money(
+        await runAll((a, b) => supabase.from('v_item_supplier_price').select('*').eq('business_id', biz)
+          .order('item_id').order('supplier_id').range(a, b)),
+        ['last_unit_cost', 'carton_cost'],
+      ) as ItemSupplier[],
+  })
+}
 
 /** What each item costs now: the last price paid, else its standard cost. */
 export const useItemCosts = () => {
@@ -448,7 +476,7 @@ export const useSaveItemSales = () => {
 
 /** Everything a write to one of these touches, so every screen showing it refreshes. */
 const ALL_PURCHASING = ['purchase_orders', 'purchase_order', 'order_lines', 'item_costs', 'expenses',
-  'expense', 'all-expenses', 'earliest', 'food_cost'] as const
+  'expense', 'all-expenses', 'earliest', 'food_cost', 'item_suppliers'] as const
 
 function useRpc<V>(name: string, keys: readonly string[], args: (v: V) => Record<string, unknown>) {
   const qc = useQueryClient()

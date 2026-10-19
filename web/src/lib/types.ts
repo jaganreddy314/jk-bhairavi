@@ -260,3 +260,20 @@ export interface ItemAlias {
   alias: string
   item_id: string
 }
+
+/**
+ * One supplier for one product: their carton size, their item code, where it sits in their
+ * order list, and what they last charged (read from orders, not typed in).
+ */
+export interface ItemSupplier {
+  business_id: string
+  item_id: string
+  supplier_id: string
+  /** Units in this supplier's carton. 1 when they sell it singly. */
+  pack_size: number
+  supplier_code: string | null
+  sort: number
+  last_unit_cost: number | null
+  carton_cost: number | null
+  last_bought_on: string | null
+}

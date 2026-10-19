@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useBulkUpdate, useItemCosts, useSave, useSetItemOrder, useStockGroups, useStockItems, useSuppliers } from '../lib/api'
+import {
+  useBulkUpdate, useItemCosts, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
+  useStockItems, useSuppliers,
+} from '../lib/api'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
+import { fmtShort } from '../lib/dates'
 import { aud } from '../lib/format'
-import type { StockGroup, StockItem, Supplier } from '../lib/types'
-import { bySection, CategoryChips, FoodTabs, NO_SECTION, supplierOrder } from '../components/catalogue'
+import type { ItemSupplier, StockGroup, StockItem, Supplier } from '../lib/types'
+import { bySection, CategoryChips, FoodTabs, linksFor, NO_SECTION, supplierOrder, type SupplierLinks } from '../components/catalogue'
 import { RowForm, TableEditor, type Field } from '../components/TableEditor'
-import { ErrorBox, Loading, Segmented } from '../components/ui'
+import { DeleteButton, ErrorBox, Loading, Segmented } from '../components/ui'
 
 const CATEGORY_OPTIONS = ENTRY_CATEGORIES.map((c) => ({ value: c, label: CAT_LABEL[c] }))
 
@@ -63,8 +67,10 @@ function Products() {
   const groups = useStockGroups()
   const suppliers = useSuppliers()
   const costs = useItemCosts()
+  const itemSuppliers = useItemSuppliers()
   const save = useSave('stock_items')
   const [cat, setCat] = useState('all')
+  const [open, setOpen] = useState<string | null>(null)
   const [supplierId, setSupplierId] = useState('')
   const [q, setQ] = useState('')
   const [showHidden, setShowHidden] = useState(false)
@@ -78,8 +84,10 @@ function Products() {
   const all = items.data ?? []
   const hiddenCount = all.filter((i) => !i.active).length
   const needle = q.trim().toLowerCase()
+  const linksByItem = new Map<string, ItemSupplier[]>()
+  for (const l of itemSuppliers.data ?? []) linksByItem.set(l.item_id, [...(linksByItem.get(l.item_id) ?? []), l])
   const pool = all.filter(
-    (i) => (showHidden || i.active) && (!supplierId || i.supplier_id === supplierId) && (!needle || i.name.toLowerCase().includes(needle)),
+    (i) => (showHidden || i.active) && (!supplierId || i.supplier_id === supplierId || (linksByItem.get(i.id) ?? []).some((l) => l.supplier_id === supplierId)) && (!needle || i.name.toLowerCase().includes(needle)),
   )
   const sections = bySection(pool, groupList)
   const current = sections.some((s) => s.key === cat) ? cat : 'all'
@@ -194,21 +202,33 @@ function Products() {
                 <li key={i.id} className={`grid grid-cols-[1rem_1fr_auto] items-center gap-x-3 py-2.5 md:grid-cols-[1rem_1fr_5rem_10rem_7rem_4rem] ${i.active ? '' : 'opacity-55'} ${selected.has(i.id) ? '-mx-2 rounded-lg bg-accent/8 px-2' : ''}`}>
                   <input type="checkbox" className="row-span-2 h-4 w-4 md:row-span-1" aria-label={`Select ${i.name}`}
                     checked={selected.has(i.id)} onChange={(e) => toggle([i.id], e.target.checked)} />
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">
+                  <button type="button" className="min-w-0 text-left" aria-expanded={open === i.id}
+                    onClick={() => setOpen(open === i.id ? null : i.id)} title="Suppliers and their prices">
+                    <span className="block truncate font-medium">
                       {i.name}
                       {!i.active && <span className="ml-2 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted">Hidden</span>}
-                    </div>
-                    <div className="truncate text-xs text-muted md:hidden">
+                    </span>
+                    <span className="block truncate text-xs text-muted md:hidden">
                       {i.unit}{supplierName(i.supplier_id) ? ` · ${supplierName(i.supplier_id)}` : ''}
-                    </div>
-                  </div>
+                      {(linksByItem.get(i.id)?.length ?? 0) > 1 && ` +${linksByItem.get(i.id)!.length - 1}`}
+                    </span>
+                  </button>
                   <span className="hidden text-sm text-ink-2 md:block">{i.unit}</span>
-                  <span className="hidden truncate text-sm text-ink-2 md:block">{supplierName(i.supplier_id) ?? <span className="text-muted">—</span>}</span>
+                  <button type="button" className="hidden truncate text-left text-sm text-ink-2 md:block" onClick={() => setOpen(open === i.id ? null : i.id)}>
+                    {supplierName(i.supplier_id) ?? <span className="text-muted">—</span>}
+                    {(linksByItem.get(i.id)?.length ?? 0) > 1 && (
+                      <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[11px] font-semibold text-accent">+{linksByItem.get(i.id)!.length - 1}</span>
+                    )}
+                  </button>
                   <Price unit={i.unit} cost={i.unit_cost} paid={lastPaid(i)} />
                   <span className="col-start-3 row-span-2 row-start-1 flex justify-end md:col-auto md:row-auto">
                     <button type="button" className="btn btn-sm" onClick={() => setEditing(i.id)}>Edit</button>
                   </span>
+                  {open === i.id && (
+                    <div className="col-span-full mt-2">
+                      <SupplierPanel item={i} links={linksByItem.get(i.id) ?? []} suppliers={supplierList.filter((x) => x.active)} />
+                    </div>
+                  )}
                 </li>
               ),
             )}
@@ -227,6 +247,96 @@ function Products() {
         the count sheet use. Untick “Active” to hide a product from both without losing its history.
       </p>
     </section>
+  )
+}
+
+/**
+ * Who sells this product, in what carton, and what each last charged. Carton size and the
+ * supplier's code save when you leave the box; the cheapest current price is marked.
+ */
+function SupplierPanel({ item, links, suppliers }: { item: StockItem; links: ItemSupplier[]; suppliers: Supplier[] }) {
+  const save = useSaveItemSupplier()
+  const remove = useRemoveItemSupplier()
+  const setUsual = useSave('stock_items')
+  const [adding, setAdding] = useState('')
+  const name = (id: string) => suppliers.find((s) => s.id === id)?.name ?? 'Supplier'
+  const priced = links.filter((l) => l.last_unit_cost)
+  const cheapest = priced.length > 1 ? priced.reduce((a, b) => (b.last_unit_cost! < a.last_unit_cost! ? b : a)).supplier_id : null
+  const unlinked = suppliers.filter((s) => !links.some((l) => l.supplier_id === s.id))
+  const sorted = [...links].sort((a, b) => Number(b.supplier_id === item.supplier_id) - Number(a.supplier_id === item.supplier_id) || name(a.supplier_id).localeCompare(name(b.supplier_id)))
+
+  return (
+    <div className="rounded-xl bg-surface-2 p-3">
+      <ErrorBox error={save.error || remove.error || setUsual.error} />
+      {links.length === 0 && <p className="mb-2 text-sm text-muted">No supplier linked yet.</p>}
+      {links.length > 0 && (
+        <div className="-mx-1 overflow-x-auto px-1">
+          <table className="num w-full min-w-[34rem] text-sm">
+            <thead className="text-left text-xs text-muted">
+              <tr>
+                <th className="py-1 font-semibold">Supplier</th>
+                <th className="py-1 font-semibold">Carton</th>
+                <th className="py-1 text-right font-semibold">Per {item.unit}</th>
+                <th className="py-1 text-right font-semibold">Per carton</th>
+                <th className="py-1 pl-3 font-semibold">Last bought</th>
+                <th className="py-1 font-semibold">Their code</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {sorted.map((l) => (
+                <tr key={l.supplier_id}>
+                  <td className="py-1.5 pr-2 font-medium">
+                    {name(l.supplier_id)}
+                    {l.supplier_id === item.supplier_id && <span className="ml-1.5 text-[11px] font-semibold text-accent">usual</span>}
+                    {l.supplier_id === cheapest && <span className="ml-1.5 rounded-full bg-good/15 px-1.5 text-[11px] font-semibold text-good">cheapest</span>}
+                  </td>
+                  <td className="py-1.5">
+                    <input aria-label={`Units per carton from ${name(l.supplier_id)}`} className="field !w-16 !px-2 !py-1 text-right" inputMode="numeric"
+                      defaultValue={l.pack_size}
+                      onBlur={(e) => {
+                        const n = Math.max(1, Math.round(Number(e.target.value) || 1))
+                        if (n !== l.pack_size) save.mutate({ item_id: item.id, supplier_id: l.supplier_id, pack_size: n })
+                        e.target.value = String(n)
+                      }} />
+                  </td>
+                  <td className="py-1.5 text-right">{l.last_unit_cost ? aud(l.last_unit_cost) : <span className="text-muted">—</span>}</td>
+                  <td className="py-1.5 text-right">{l.carton_cost && l.pack_size > 1 ? aud(l.carton_cost) : <span className="text-muted">—</span>}</td>
+                  <td className="py-1.5 pl-3 text-ink-2">{l.last_bought_on ? fmtShort(l.last_bought_on) : <span className="text-muted">never</span>}</td>
+                  <td className="py-1.5">
+                    <input aria-label={`${name(l.supplier_id)}'s code`} className="field !w-24 !px-2 !py-1" defaultValue={l.supplier_code ?? ''}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim() || null
+                        if (v !== l.supplier_code) save.mutate({ item_id: item.id, supplier_id: l.supplier_id, supplier_code: v })
+                      }} />
+                  </td>
+                  <td className="py-1.5 text-right">
+                    <span className="inline-flex gap-1">
+                      {l.supplier_id !== item.supplier_id && (
+                        <button type="button" className="btn btn-sm" disabled={setUsual.isPending}
+                          onClick={() => setUsual.mutate({ id: item.id, supplier_id: l.supplier_id })}>Make usual</button>
+                      )}
+                      <DeleteButton label="Remove" busy={remove.isPending} onConfirm={() => remove.mutate({ item_id: item.id, supplier_id: l.supplier_id })} />
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {unlinked.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select aria-label="Add a supplier" className="field !w-auto !py-1.5 !text-sm" value={adding} onChange={(e) => setAdding(e.target.value)}>
+            <option value="">Add a supplier…</option>
+            {unlinked.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button type="button" className="btn btn-sm" disabled={!adding || save.isPending}
+            onClick={() => save.mutate({ item_id: item.id, supplier_id: adding, pack_size: 1 }, { onSuccess: () => setAdding('') })}>Add</button>
+        </div>
+      )}
+      <p className="mt-2 text-xs text-muted">Prices are what each supplier last charged per {item.unit}, from their orders. Ordering from a new supplier links it automatically.</p>
+    </div>
   )
 }
 
@@ -310,12 +420,16 @@ function SupplierOrder() {
   const items = useStockItems()
   const groups = useStockGroups()
   const suppliers = useSuppliers()
+  const itemSuppliers = useItemSuppliers()
   const [supplierId, setSupplierId] = useState('')
 
-  if (items.isLoading || groups.isLoading || suppliers.isLoading) return <Loading />
+  if (items.isLoading || groups.isLoading || suppliers.isLoading || itemSuppliers.isLoading) return <Loading />
 
   const all = (items.data ?? []).filter((i) => i.active)
-  const withItems = (suppliers.data ?? []).filter((s) => s.active && all.some((i) => i.supplier_id === s.id))
+  const links = itemSuppliers.data ?? []
+  // A supplier's products are the ones linked to them: a product sold by two suppliers is on both lists.
+  const theirs = (id: string) => { const l = linksFor(links, id); return all.filter((i) => l.has(i.id)) }
+  const withItems = (suppliers.data ?? []).filter((s) => s.active && theirs(s.id).length > 0)
   const supplier = withItems.find((s) => s.id === supplierId) ?? withItems[0]
 
   return (
@@ -333,21 +447,22 @@ function SupplierOrder() {
           <label className="label" htmlFor="so-supplier">Supplier</label>
           <select id="so-supplier" className="field mb-3 !w-auto !py-2" value={supplier.id} onChange={(e) => setSupplierId(e.target.value)}>
             {withItems.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({all.filter((i) => i.supplier_id === s.id).length})</option>
+              <option key={s.id} value={s.id}>{s.name} ({theirs(s.id).length})</option>
             ))}
           </select>
           {/* Remount per supplier, or when its products change, so the draft starts from what's saved.
               Not on every refetch — coming back to the tab mustn't throw away an unsaved arrangement. */}
-          <Arrange key={supplier.id + all.filter((i) => i.supplier_id === supplier.id).map((i) => i.id).sort().join()} supplier={supplier} items={all.filter((i) => i.supplier_id === supplier.id)} groups={groups.data ?? []} />
+          <Arrange key={supplier.id + theirs(supplier.id).map((i) => i.id).sort().join()} supplier={supplier}
+            items={theirs(supplier.id)} links={linksFor(links, supplier.id)} groups={groups.data ?? []} />
         </>
       )}
     </section>
   )
 }
 
-function Arrange({ supplier, items, groups }: { supplier: Supplier; items: StockItem[]; groups: StockGroup[] }) {
+function Arrange({ supplier, items, links, groups }: { supplier: Supplier; items: StockItem[]; links: SupplierLinks; groups: StockGroup[] }) {
   const saveOrder = useSetItemOrder()
-  const saved = [...items].sort(supplierOrder(supplier.id))
+  const saved = [...items].sort(supplierOrder(links))
   const [ids, setIds] = useState(() => saved.map((i) => i.id))
   const [dragging, setDragging] = useState<string | null>(null)
   const byId = new Map(items.map((i) => [i.id, i]))
@@ -404,9 +519,10 @@ function Arrange({ supplier, items, groups }: { supplier: Supplier; items: Stock
         <span className="min-w-0 flex-1 text-sm text-muted">{changed ? 'Not saved yet' : `${supplier.name}’s order is saved`}</span>
         <button type="button" className="btn" disabled={!changed} onClick={() => setIds(saved.map((i) => i.id))}>Undo</button>
         <button type="button" className="btn btn-primary" disabled={!changed || saveOrder.isPending}
-          onClick={() => saveOrder.mutate(
-            ids.map((id, n) => ({ id, supplier_sort: (n + 1) * 10 })).filter((r) => byId.get(r.id)!.supplier_sort !== r.supplier_sort),
-          )}>
+          onClick={() => saveOrder.mutate({
+            supplierId: supplier.id,
+            rows: ids.map((id, n) => ({ item_id: id, sort: (n + 1) * 10 })).filter((r) => links.get(r.item_id)?.sort !== r.sort),
+          })}>
           {saveOrder.isPending ? 'Saving…' : 'Save order'}
         </button>
       </div>

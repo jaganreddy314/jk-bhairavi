@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { aud, parseMoney } from '../lib/format'
 import { lineTotal, orderTotal } from '../lib/purchasing'
-import type { ItemCost, StockGroup, StockItem, Supplier } from '../lib/types'
+import type { ItemCost, ItemSupplier, StockGroup, StockItem, Supplier } from '../lib/types'
 import { Segmented } from './ui'
 
 /** The heading and tabs shared by the two Food pages. */
@@ -38,19 +38,24 @@ export function bySection(items: StockItem[], groups: StockGroup[], order: (a: S
 
 const byName = (a: StockItem, b: StockItem) => a.name.localeCompare(b.name)
 
+/** One supplier's links, by product: what they sell, in what carton, at what price, in what order. */
+export type SupplierLinks = Map<string, ItemSupplier>
+export const linksFor = (all: ItemSupplier[], supplierId: string | undefined): SupplierLinks =>
+  new Map(all.filter((l) => l.supplier_id === supplierId).map((l) => [l.item_id, l]))
+
 /**
- * The order you go through when ordering from a supplier: their items in the arranged
+ * The order you go through when ordering from a supplier: their products in the arranged
  * order (Catalogue → Supplier order), then anything else alphabetically.
  */
-export const supplierOrder = (supplierId: string | undefined) => (a: StockItem, b: StockItem) =>
-  Number(a.supplier_id !== supplierId) - Number(b.supplier_id !== supplierId) ||
-  (a.supplier_id === supplierId ? a.supplier_sort - b.supplier_sort : 0) ||
+export const supplierOrder = (links: SupplierLinks) => (a: StockItem, b: StockItem) =>
+  Number(!links.has(a.id)) - Number(!links.has(b.id)) ||
+  (links.get(a.id)?.sort ?? 0) - (links.get(b.id)?.sort ?? 0) ||
   byName(a, b)
 
 /** Picked lines in walk-through order, so the order — and the text sent to the supplier — reads the same way. */
-export function linesInOrder(picks: Picks, items: StockItem[], supplierId: string | undefined) {
+export function linesInOrder(picks: Picks, items: StockItem[], links: SupplierLinks) {
   const byId = new Map(items.map((i) => [i.id, i]))
-  const order = supplierOrder(supplierId)
+  const order = supplierOrder(links)
   return pickedLines(picks).sort((a, b) => order(byId.get(a.item_id)!, byId.get(b.item_id)!))
 }
 
@@ -93,23 +98,28 @@ export const pickedLines = (picks: Picks) =>
  * supplier's own items; a chip per section narrows the list, and “Picked” shows what's on so far.
  */
 export function ItemPicker({
-  supplier, items, groups, costs, exclude, picks, onChange,
+  supplier, items, groups, costs, links, exclude, picks, onChange,
 }: {
   supplier: Supplier | undefined
   items: StockItem[]
   groups: StockGroup[]
   costs: ItemCost[]
+  /** This supplier's links: their products, cartons and last prices. */
+  links: SupplierLinks
   exclude?: Set<string>
   picks: Picks
   onChange: (p: Picks) => void
 }) {
   const active = useMemo(() => items.filter((i) => i.active && !exclude?.has(i.id)), [items, exclude])
-  const theirs = active.filter((i) => i.supplier_id === supplier?.id)
+  const theirs = active.filter((i) => links.has(i.id))
   const [scope, setScope] = useState<'theirs' | 'all'>(theirs.length ? 'theirs' : 'all')
   const [cat, setCat] = useState('all')
   const [q, setQ] = useState('')
 
-  const costOf = (i: StockItem) => costs.find((c) => c.item_id === i.id)?.unit_cost || i.unit_cost || 0
+  // This supplier's last price first; then the last price paid anyone; then the catalogue's.
+  const costOf = (i: StockItem) =>
+    links.get(i.id)?.last_unit_cost || costs.find((c) => c.item_id === i.id)?.unit_cost || i.unit_cost || 0
+  const packOf = (i: StockItem) => links.get(i.id)?.pack_size ?? 1
   const qtyOf = (id: string) => parseMoney(picks[id]?.qty ?? '')
   const setQty = (i: StockItem, qty: string) =>
     onChange({ ...picks, [i.id]: { qty, cost: picks[i.id]?.cost ?? String(costOf(i) || '') } })
@@ -119,7 +129,7 @@ export function ItemPicker({
   const pool = (scope === 'theirs' ? theirs : active).filter((i) => !needle || i.name.toLowerCase().includes(needle))
   // One supplier's own list reads in their arranged order, as a single run; everything else by category.
   const walk = scope === 'theirs' && !!supplier
-  const order = walk ? supplierOrder(supplier.id) : byName
+  const order = walk ? supplierOrder(links) : byName
   const sections = bySection(pool, groups, order)
   const pickedHere = pool.filter((i) => qtyOf(i.id) > 0)
   // A chip that has been emptied by the search or the scope falls back to “All”.
@@ -148,7 +158,7 @@ export function ItemPicker({
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       {supplier && scope === 'theirs' && theirs.length === 0 && (
-        <p className="mb-2 text-sm text-muted">Nothing is marked as usually from {supplier.name} yet — switch to all items.</p>
+        <p className="mb-2 text-sm text-muted">Nothing is linked to {supplier.name} yet — switch to all items.</p>
       )}
       {pool.length > 0 && (
         <CategoryChips
@@ -179,10 +189,11 @@ export function ItemPicker({
                       <div className="truncate font-medium">{i.name}</div>
                       <div className="num text-xs text-muted">
                         {costOf(i) > 0 ? `${aud(costOf(i))} / ${i.unit}` : i.unit}
-                        {supplier && i.supplier_id && i.supplier_id !== supplier.id && <span> · usually another supplier</span>}
+                        {packOf(i) > 1 && <span> · ctn of {packOf(i)}{costOf(i) > 0 ? ` = ${aud(costOf(i) * packOf(i))}` : ''}</span>}
+                        {supplier && !links.has(i.id) && <span> · not linked to {supplier.name}</span>}
                       </div>
                     </div>
-                    <QtyStepper name={i.name} unit={i.unit} value={p?.qty ?? ''} onChange={(v) => setQty(i, v)} />
+                    <QtyStepper name={i.name} unit={i.unit} pack={packOf(i)} value={p?.qty ?? ''} onChange={(v) => setQty(i, v)} />
                   </div>
                   {qty > 0 && (
                     <div className="mt-1.5 flex items-center justify-end gap-2 text-sm">
@@ -203,8 +214,8 @@ export function ItemPicker({
   )
 }
 
-/** − [qty] + : one tap per unit, or type a part amount. */
-function QtyStepper({ name, unit, value, onChange }: { name: string; unit: string; value: string; onChange: (v: string) => void }) {
+/** − [qty] + : one tap per unit, or type a part amount. When the supplier sells by the carton, “+ctn” adds a whole one. */
+function QtyStepper({ name, unit, pack = 1, value, onChange }: { name: string; unit: string; pack?: number; value: string; onChange: (v: string) => void }) {
   const n = parseMoney(value)
   const step = (d: number) => {
     const next = Math.max(0, Math.round((n + d) * 1000) / 1000)
@@ -216,7 +227,14 @@ function QtyStepper({ name, unit, value, onChange }: { name: string; unit: strin
       <input aria-label={`Quantity of ${name}`} className="field num !w-16 !px-2 !py-1.5 text-center" inputMode="decimal" placeholder="0"
         value={value} onChange={(e) => onChange(e.target.value)} />
       <button type="button" className="btn btn-sm !h-9 !w-9 !p-0 text-lg" aria-label={`One more ${name}`} onClick={() => step(1)}>+</button>
-      <span className="w-9 truncate text-xs text-muted">{unit}</span>
+      {pack > 1 ? (
+        <button type="button" className="btn btn-sm !h-9 !px-2 text-xs" aria-label={`One more carton of ${pack} ${name}`} onClick={() => step(pack)}>
+          +ctn
+        </button>
+      ) : null}
+      <span className="w-12 truncate text-xs text-muted">
+        {pack > 1 && n > 0 && n % pack === 0 ? `${n / pack} ctn` : unit}
+      </span>
     </span>
   )
 }

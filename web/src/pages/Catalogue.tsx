@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   useBulkUpdate, useItemCosts, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
-  useStockItems, useSuppliers,
+  useStockItems, useStockLocations, useSuppliers,
 } from '../lib/api'
+import { walkOrder } from '../lib/layout'
+import StoreLayout from './StoreLayout'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { fmtShort } from '../lib/dates'
 import { aud } from '../lib/format'
@@ -30,13 +32,13 @@ const UNIT_OPTIONS = [
   { value: 'bottle', label: 'bottle' },
 ]
 
-type Tab = 'products' | 'order' | 'suppliers' | 'sections'
+type Tab = 'products' | 'order' | 'layout' | 'suppliers' | 'sections'
 
 /** What the shop buys and counts: products, who supplies them, and where they live. */
 export default function Catalogue() {
   const [params, setParams] = useSearchParams()
   const raw = params.get('tab')
-  const tab: Tab = raw === 'suppliers' || raw === 'sections' || raw === 'order' ? raw : 'products'
+  const tab: Tab = raw === 'suppliers' || raw === 'sections' || raw === 'order' || raw === 'layout' ? raw : 'products'
 
   return (
     <div>
@@ -49,6 +51,7 @@ export default function Catalogue() {
           options={[
             { value: 'products', label: 'Products' },
             { value: 'order', label: 'Supplier order' },
+            { value: 'layout', label: 'Store layout' },
             { value: 'suppliers', label: 'Suppliers' },
             { value: 'sections', label: 'Categories' },
           ]}
@@ -56,6 +59,7 @@ export default function Catalogue() {
       </div>
       {tab === 'products' && <Products />}
       {tab === 'order' && <SupplierOrder />}
+      {tab === 'layout' && <StoreLayout />}
       {tab === 'suppliers' && <Suppliers />}
       {tab === 'sections' && <Sections />}
     </div>
@@ -68,6 +72,7 @@ function Products() {
   const suppliers = useSuppliers()
   const costs = useItemCosts()
   const itemSuppliers = useItemSuppliers()
+  const locations = useStockLocations()
   const save = useSave('stock_items')
   const [cat, setCat] = useState('all')
   const [open, setOpen] = useState<string | null>(null)
@@ -165,6 +170,7 @@ function Products() {
           ids={chosen}
           groups={groupList.map((g) => ({ value: g.id, label: g.name }))}
           suppliers={supplierList.filter((s) => s.active).map((s) => ({ value: s.id, label: s.name }))}
+          locations={[...(locations.data ?? [])].sort(walkOrder).map((l) => ({ value: l.id, label: l.name }))}
           onDone={() => setSelected(new Set())}
         />
       )}
@@ -345,16 +351,19 @@ const NONE = '__none'
 
 /** Change the category, supplier or visibility of every ticked product in one go. Blank means leave as is. */
 function BulkBar({
-  ids, groups, suppliers, onDone,
-}: { ids: string[]; groups: Option[]; suppliers: Option[]; onDone: () => void }) {
+  ids, groups, suppliers, locations, onDone,
+}: { ids: string[]; groups: Option[]; suppliers: Option[]; locations: Option[]; onDone: () => void }) {
   const update = useBulkUpdate('stock_items')
   const [group, setGroup] = useState(KEEP)
   const [supplier, setSupplier] = useState(KEEP)
   const [active, setActive] = useState(KEEP)
+  const [location, setLocation] = useState(KEEP)
   const patch: Record<string, unknown> = {}
   if (group !== KEEP) patch.group_id = group === NONE ? null : group
   if (supplier !== KEEP) patch.supplier_id = supplier === NONE ? null : supplier
   if (active !== KEEP) patch.active = active === 'show'
+  // A product moved by hand goes to the end of that location's arranged order.
+  if (location !== KEEP) Object.assign(patch, { location_id: location === NONE ? null : location, location_sort: 0 })
   const changes = Object.keys(patch).length
 
   const pick = (label: string, value: string, set: (v: string) => void, options: Option[], none: string) => (
@@ -376,6 +385,7 @@ function BulkBar({
       <div className="flex flex-wrap items-end gap-2">
         {pick('Category', group, setGroup, groups, 'No category')}
         {pick('Usually from', supplier, setSupplier, suppliers, 'No supplier')}
+        {locations.length > 0 && pick('Counted at', location, setLocation, locations, 'Wherever its category is')}
         <div className="min-w-32">
           <label className="label">Show in orders &amp; counts
             <select className="field mt-1.5 !py-2" value={active} onChange={(e) => setActive(e.target.value)}>
@@ -388,7 +398,7 @@ function BulkBar({
         <button type="button" className="btn btn-primary !py-2" disabled={!changes || update.isPending}
           onClick={async () => {
             await update.mutateAsync({ ids, patch })
-            setGroup(KEEP); setSupplier(KEEP); setActive(KEEP)
+            setGroup(KEEP); setSupplier(KEEP); setActive(KEEP); setLocation(KEEP)
             onDone()
           }}>
           {update.isPending ? 'Saving…' : `Update ${ids.length}`}

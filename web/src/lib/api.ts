@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
-  ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier,
+  ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockLocation, StockLocationGroup,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -160,7 +160,9 @@ const DEPENDENTS: Record<string, string[]> = {
   setup_costs: ['setup_costs'],
   businesses: ['businesses'],
   business_users: ['business_users'],
-  stock_groups: ['stock_groups', 'stock_items'],
+  stock_groups: ['stock_groups', 'stock_items', 'stock_location_groups'],
+  stock_locations: ['stock_locations', 'stock_location_groups', 'stock_items'],
+  stock_location_groups: ['stock_location_groups'],
   // An item's name, cost or group shows up on count sheets and order lines alike.
   stock_items: ['stock_items', 'item_costs', 'stock_count_lines', 'order_lines', 'item_suppliers'],
   purchase_orders: ['purchase_orders', 'purchase_order'],
@@ -178,7 +180,8 @@ const DEPENDENTS: Record<string, string[]> = {
 // purchase_order_lines and stock_count_lines are left out on purpose: a database trigger
 // copies business_id from the parent order or count, which is what row-level security checks.
 const SCOPED = new Set(['sales_days', 'expenses', 'recurring_expenses', 'suppliers', 'staff', 'partners',
-  'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items', 'purchase_orders', 'stock_counts'])
+  'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items',
+  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts'])
 
 function useWrite<V>(tableName: string, fn: (v: V) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
   const qc = useQueryClient()
@@ -282,6 +285,27 @@ export const useCreateBusiness = () => {
 
 export const useStockGroups = scopedTable<StockGroup>('stock_groups', 'sort')
 export const useStockItems = scopedTable<StockItem>('stock_items', 'name', ['unit_cost'])
+export const useStockLocations = scopedTable<StockLocation>('stock_locations', 'sort')
+
+/** Which categories are kept at which location. */
+export const useStockLocationGroups = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['stock_location_groups', biz],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('stock_location_groups').select('*').eq('business_id', biz)
+        .order('location_id').order('group_id').range(a, b))) as StockLocationGroup[],
+  })
+}
+
+export const useRemoveLocationGroup = () =>
+  useWrite<{ location_id: string; group_id: string }>('stock_location_groups', (v) =>
+    supabase.from('stock_location_groups').delete().eq('location_id', v.location_id).eq('group_id', v.group_id))
+
+/** Place products at a location in this order — the whole shelf in one go. */
+export const useSetLocationOrder = () =>
+  useWrite<{ locationId: string; itemIds: string[] }>('stock_items', (v) =>
+    supabase.rpc('set_location_order', { p_location: v.locationId, p_items: v.itemIds }))
 
 /** Every product–supplier link, with that supplier's carton and what they last charged. */
 export const useItemSuppliers = () => {

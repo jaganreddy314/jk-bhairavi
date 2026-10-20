@@ -150,6 +150,26 @@ export interface StockItem {
   active: boolean
   /** Position in its supplier's list — the order you go through when ordering. */
   supplier_sort: number
+  /** Where it's counted, when placed by hand; otherwise its category's location. */
+  location_id: string | null
+  /** Position within that location on the stock take walk; 0 until arranged. */
+  location_sort: number
+}
+
+/** A spot counted from on the stock take walk: a shelf side, a fridge door, a store room shelf. */
+export interface StockLocation {
+  id: string
+  business_id: string
+  name: string
+  sort: number
+}
+
+/** A category kept at a location. A category can be at several (Drinks across the fridge doors). */
+export interface StockLocationGroup {
+  business_id: string
+  location_id: string
+  group_id: string
+  sort: number
 }
 
 export interface PurchaseOrder {

@@ -1,6 +1,6 @@
 import { fmtDay } from './dates'
 import { aud, cents } from './format'
-import type { PoStatus, PurchaseOrderLine, StockCountLine, StockItem, WeeklyFoodCost } from './types'
+import type { PoStatus, PurchaseOrderLine, StockCountLine, WeeklyFoodCost } from './types'
 
 export const lineTotal = (l: Pick<PurchaseOrderLine, 'qty' | 'unit_cost'>) => cents(l.qty * l.unit_cost)
 export const orderTotal = (lines: Pick<PurchaseOrderLine, 'qty' | 'unit_cost'>[]) =>
@@ -59,26 +59,6 @@ export function orderText(o: {
   if (o.note?.trim()) out.push(o.note.trim())
   out.push(`Ref PO #${o.poNumber}`)
   return out.join('\n')
-}
-
-/** Items grouped into count-sheet sections, in the order you walk the shop. Ungrouped last. */
-export function groupItems<T extends { id: string }>(
-  items: StockItem[],
-  groups: { id: string; name: string; sort: number }[],
-  pick: (item: StockItem) => T | undefined,
-): { key: string; name: string; rows: { item: StockItem; row: T }[] }[] {
-  const sections = [...groups]
-    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
-    .map((g) => ({ key: g.id, name: g.name, rows: [] as { item: StockItem; row: T }[] }))
-  const loose = { key: '', name: groups.length ? 'Not in a section' : 'All items', rows: [] as { item: StockItem; row: T }[] }
-
-  for (const item of [...items].sort((a, b) => a.name.localeCompare(b.name))) {
-    const row = pick(item)
-    if (!row) continue
-    const target = sections.find((s) => s.key === item.group_id) ?? loose
-    target.rows.push({ item, row })
-  }
-  return [...sections, loose].filter((s) => s.rows.length > 0)
 }
 
 /**

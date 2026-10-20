@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   useRemove, useSave, useSaveCountLines, useStartStockCount, useStockCount, useStockCountLines,
-  useStockCounts, useStockGroups, useStockItems,
+  useStockCounts, useStockGroups, useStockItems, useStockLocationGroups, useStockLocations,
 } from '../lib/api'
 import { fmtDay } from '../lib/dates'
 import { aud } from '../lib/format'
-import { countLineValue, countTotal, groupItems, qtyStr } from '../lib/purchasing'
+import { walkSections } from '../lib/layout'
+import { countLineValue, countTotal, qtyStr } from '../lib/purchasing'
 import type { StockCount, StockCountLine } from '../lib/types'
 import { DeleteButton, ErrorBox, Flash, Loading, PageHeader } from '../components/ui'
 
@@ -27,6 +28,8 @@ function Sheet({ count }: { count: StockCount }) {
   const lines = useStockCountLines(count.id)
   const items = useStockItems()
   const groups = useStockGroups()
+  const locations = useStockLocations()
+  const locationGroups = useStockLocationGroups()
   const allCounts = useStockCounts()
   const saveLines = useSaveCountLines()
   const saveCount = useSave('stock_counts')
@@ -56,10 +59,14 @@ function Sheet({ count }: { count: StockCount }) {
   const total = countTotal(effective)
 
   const byItem = useMemo(() => new Map(rows.map((l) => [l.item_id, l])), [rows])
+  // Laid out the way you walk the shop: shelf by shelf, door by door (Food → Catalogue → Store layout).
   const sections = useMemo(
-    () => groupItems(items.data ?? [], groups.data ?? [], (item) => byItem.get(item.id)),
-    [items.data, groups.data, byItem],
+    () => walkSections(items.data ?? [], groups.data ?? [], locations.data ?? [], locationGroups.data ?? [], (item) => byItem.get(item.id)),
+    [items.data, groups.data, locations.data, locationGroups.data, byItem],
   )
+  const groupName = useMemo(() => new Map((groups.data ?? []).map((g) => [g.id, g.name])), [groups.data])
+  // A line counts as done once a figure is in it, a zero included.
+  const entered = (l: StockCountLine) => (l.id in draft ? draft[l.id].trim() !== '' : l.qty > 0)
 
   const dirty = Object.keys(draft).filter((id) => {
     const line = rows.find((l) => l.id === id)
@@ -101,6 +108,31 @@ function Sheet({ count }: { count: StockCount }) {
         </p>
       )}
 
+      {!final && rows.length > 0 && (
+        <p className="mb-3 text-sm text-muted">
+          {(locations.data ?? []).length
+            ? 'In the order you walk the store.'
+            : 'Tip: set up your shelves and fridge doors so this sheet follows your walk round the store.'}{' '}
+          <Link className="font-semibold text-accent" to="/food/catalogue?tab=layout">Store layout →</Link>
+        </p>
+      )}
+
+      {/* Jump straight to a shelf; the figure is how many on it have been counted. */}
+      {sections.length > 1 && (
+        <nav aria-label="Jump to" className="sticky top-14 z-10 -mx-4 mb-3 flex gap-1.5 overflow-x-auto bg-page/95 px-4 py-2 backdrop-blur">
+          {sections.map((s) => {
+            const done = s.rows.filter(({ row }) => entered(row)).length
+            return (
+              <a key={s.key || 'loose'} href={`#walk-${s.key}`}
+                className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${done === s.rows.length ? 'border-good/40 bg-good/10 text-good' : 'border-line bg-surface text-ink-2'}`}
+                onClick={(e) => { e.preventDefault(); document.getElementById(`walk-${s.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>
+                {s.name} <span className="num text-muted">{done}/{s.rows.length}</span>
+              </a>
+            )
+          })}
+        </nav>
+      )}
+
       {lines.isLoading ? (
         <Loading />
       ) : rows.length === 0 ? (
@@ -112,9 +144,9 @@ function Sheet({ count }: { count: StockCount }) {
           {sections.map((s) => {
             const sectionTotal = countTotal(s.rows.map(({ row }) => ({ qty: qtyOf(row), unit_cost: row.unit_cost })))
             return (
-              <section key={s.key || 'loose'} className="card p-4">
+              <section key={s.key || 'loose'} id={`walk-${s.key}`} className="card scroll-mt-28 p-4">
                 <div className="mb-1 flex items-baseline justify-between gap-3">
-                  <h2 className="font-semibold">{s.name}</h2>
+                  <h2 className="font-semibold">{s.name} <span className="text-sm font-normal text-muted">· {s.rows.length}</span></h2>
                   <span className="num text-sm font-semibold text-ink-2">{aud(sectionTotal)}</span>
                 </div>
                 <ul className="divide-y divide-line">
@@ -126,6 +158,7 @@ function Sheet({ count }: { count: StockCount }) {
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{item.name}</span>
                           <span className="text-xs text-muted">
+                            {s.locationId && item.group_id && groupName.has(item.group_id) && `${groupName.get(item.group_id)} · `}
                             {aud(row.unit_cost)}/{item.unit}
                             {was != null && was > 0 && ` · was ${qtyStr(was)}`}
                           </span>

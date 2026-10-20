@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  useBulkUpdate, useItemCosts, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
+  useBulkUpdate, useItemCosts, usePlaceItems, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
   useStockItems, useStockLocations, useSuppliers,
 } from '../lib/api'
 import { walkOrder } from '../lib/layout'
@@ -354,6 +354,7 @@ function BulkBar({
   ids, groups, suppliers, locations, onDone,
 }: { ids: string[]; groups: Option[]; suppliers: Option[]; locations: Option[]; onDone: () => void }) {
   const update = useBulkUpdate('stock_items')
+  const placeItems = usePlaceItems()
   const [group, setGroup] = useState(KEEP)
   const [supplier, setSupplier] = useState(KEEP)
   const [active, setActive] = useState(KEEP)
@@ -362,9 +363,7 @@ function BulkBar({
   if (group !== KEEP) patch.group_id = group === NONE ? null : group
   if (supplier !== KEEP) patch.supplier_id = supplier === NONE ? null : supplier
   if (active !== KEEP) patch.active = active === 'show'
-  // A product moved by hand goes to the end of that location's arranged order.
-  if (location !== KEEP) Object.assign(patch, { location_id: location === NONE ? null : location, location_sort: 0 })
-  const changes = Object.keys(patch).length
+  const changes = Object.keys(patch).length + (location !== KEEP ? 1 : 0)
 
   const pick = (label: string, value: string, set: (v: string) => void, options: Option[], none: string) => (
     <div className="min-w-36 flex-1">
@@ -380,12 +379,12 @@ function BulkBar({
 
   return (
     <div className="sticky top-16 z-10 mt-3 rounded-xl border border-accent/40 bg-surface p-3 shadow-lg">
-      <ErrorBox error={update.error} />
+      <ErrorBox error={update.error || placeItems.error} />
       <p className="mb-2 text-sm font-semibold">{ids.length} {ids.length === 1 ? 'product' : 'products'} selected</p>
       <div className="flex flex-wrap items-end gap-2">
         {pick('Category', group, setGroup, groups, 'No category')}
         {pick('Usually from', supplier, setSupplier, suppliers, 'No supplier')}
-        {locations.length > 0 && pick('Counted at', location, setLocation, locations, 'Wherever its category is')}
+        {locations.length > 0 && pick('Counted at (only)', location, setLocation, locations, 'Wherever its category is')}
         <div className="min-w-32">
           <label className="label">Show in orders &amp; counts
             <select className="field mt-1.5 !py-2" value={active} onChange={(e) => setActive(e.target.value)}>
@@ -395,9 +394,11 @@ function BulkBar({
             </select>
           </label>
         </div>
-        <button type="button" className="btn btn-primary !py-2" disabled={!changes || update.isPending}
+        <button type="button" className="btn btn-primary !py-2" disabled={!changes || update.isPending || placeItems.isPending}
           onClick={async () => {
-            await update.mutateAsync({ ids, patch })
+            if (Object.keys(patch).length) await update.mutateAsync({ ids, patch })
+            // That location becomes their one place, at the end of whatever is arranged there.
+            if (location !== KEEP) await placeItems.mutateAsync({ locationId: location === NONE ? null : location, itemIds: ids, only: true })
             setGroup(KEEP); setSupplier(KEEP); setActive(KEEP); setLocation(KEEP)
             onDone()
           }}>

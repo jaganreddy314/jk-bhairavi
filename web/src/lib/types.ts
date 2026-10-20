@@ -150,10 +150,6 @@ export interface StockItem {
   active: boolean
   /** Position in its supplier's list — the order you go through when ordering. */
   supplier_sort: number
-  /** Where it's counted, when placed by hand; otherwise its category's location. */
-  location_id: string | null
-  /** Position within that location on the stock take walk; 0 until arranged. */
-  location_sort: number
 }
 
 /** A spot counted from on the stock take walk: a shelf side, a fridge door, a store room shelf. */
@@ -161,6 +157,15 @@ export interface StockLocation {
   id: string
   business_id: string
   name: string
+  sort: number
+}
+
+/** A place a product is counted at, put there by hand. Without any it counts where its category is. */
+export interface StockItemPlace {
+  business_id: string
+  item_id: string
+  location_id: string
+  /** Position on that shelf; 0 until arranged. */
   sort: number
 }
 
@@ -226,6 +231,8 @@ export interface StockCountLine {
   business_id: string
   item_id: string
   qty: number
+  /** For a product counted in several places, what was found at each: {location id: qty}. qty is their sum. */
+  place_qty: Record<string, number> | null
   /** Frozen when the sheet was started, so a later price change can't move a past week. */
   unit_cost: number
 }

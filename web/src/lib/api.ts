@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
-  ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockLocation, StockLocationGroup,
+  ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -161,8 +161,9 @@ const DEPENDENTS: Record<string, string[]> = {
   businesses: ['businesses'],
   business_users: ['business_users'],
   stock_groups: ['stock_groups', 'stock_items', 'stock_location_groups'],
-  stock_locations: ['stock_locations', 'stock_location_groups', 'stock_items'],
+  stock_locations: ['stock_locations', 'stock_location_groups', 'stock_item_places'],
   stock_location_groups: ['stock_location_groups'],
+  stock_item_places: ['stock_item_places'],
   // An item's name, cost or group shows up on count sheets and order lines alike.
   stock_items: ['stock_items', 'item_costs', 'stock_count_lines', 'order_lines', 'item_suppliers'],
   purchase_orders: ['purchase_orders', 'purchase_order'],
@@ -298,14 +299,38 @@ export const useStockLocationGroups = () => {
   })
 }
 
+/** Every place products have been put by hand, with their position there. */
+export const useItemPlaces = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['stock_item_places', biz],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('stock_item_places').select('*').eq('business_id', biz)
+        .order('item_id').order('location_id').range(a, b))) as StockItemPlace[],
+  })
+}
+
 export const useRemoveLocationGroup = () =>
   useWrite<{ location_id: string; group_id: string }>('stock_location_groups', (v) =>
     supabase.from('stock_location_groups').delete().eq('location_id', v.location_id).eq('group_id', v.group_id))
 
 /** Place products at a location in this order — the whole shelf in one go. */
 export const useSetLocationOrder = () =>
-  useWrite<{ locationId: string; itemIds: string[] }>('stock_items', (v) =>
+  useWrite<{ locationId: string; itemIds: string[] }>('stock_item_places', (v) =>
     supabase.rpc('set_location_order', { p_location: v.locationId, p_items: v.itemIds }))
+
+/**
+ * Put products at a location. `only`: it becomes their one place (null location = back to their
+ * category's spot). `from`: move them from there. Neither: add it as another place.
+ */
+export const usePlaceItems = () =>
+  useWrite<{ locationId: string | null; itemIds: string[]; from?: string; only?: boolean }>('stock_item_places', (v) =>
+    supabase.rpc('place_items', { p_location: v.locationId, p_items: v.itemIds, p_from: v.from ?? null, p_only: v.only ?? false }))
+
+/** Stop counting products at a location — for ones that are kept somewhere else too. */
+export const useRemovePlaces = () =>
+  useWrite<{ locationId: string; itemIds: string[] }>('stock_item_places', (v) =>
+    supabase.from('stock_item_places').delete().eq('location_id', v.locationId).in('item_id', v.itemIds))
 
 /** Every product–supplier link, with that supplier's carton and what they last charged. */
 export const useItemSuppliers = () => {
@@ -553,8 +578,8 @@ export const useStartStockCount = () => {
 export const useSaveCountLines = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (lines: { id: string; qty: number }[]) =>
-      Promise.all(lines.map((l) => run(supabase.from('stock_count_lines').update({ qty: l.qty }).eq('id', l.id)))),
+    mutationFn: (lines: { id: string; qty: number; place_qty?: Record<string, number> | null }[]) =>
+      Promise.all(lines.map(({ id, ...patch }) => run(supabase.from('stock_count_lines').update(patch).eq('id', id)))),
     onSuccess: () => ['stock_count_lines', 'stock_counts', 'food_cost'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   })
 }

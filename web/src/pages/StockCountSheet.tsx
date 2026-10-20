@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  useRemove, useSave, useSaveCountLines, useStartStockCount, useStockCount, useStockCountLines,
+  useItemPlaces, useRemove, useSave, useSaveCountLines, useStartStockCount, useStockCount, useStockCountLines,
   useStockCounts, useStockGroups, useStockItems, useStockLocationGroups, useStockLocations,
 } from '../lib/api'
 import { fmtDay } from '../lib/dates'
 import { aud } from '../lib/format'
-import { walkSections } from '../lib/layout'
+import { layout, walkSections } from '../lib/layout'
 import { countLineValue, countTotal, qtyStr } from '../lib/purchasing'
 import type { StockCount, StockCountLine } from '../lib/types'
 import { DeleteButton, ErrorBox, Flash, Loading, PageHeader } from '../components/ui'
@@ -30,6 +30,7 @@ function Sheet({ count }: { count: StockCount }) {
   const groups = useStockGroups()
   const locations = useStockLocations()
   const locationGroups = useStockLocationGroups()
+  const places = useItemPlaces()
   const allCounts = useStockCounts()
   const saveLines = useSaveCountLines()
   const saveCount = useSave('stock_counts')
@@ -38,6 +39,7 @@ function Sheet({ count }: { count: StockCount }) {
 
   // Quantities are typed into local state and saved in one go: a full sheet is 30-odd
   // boxes, and a request per keystroke on a phone in a cool room is no use to anybody.
+  // Keyed by line id, or "line id@location id" for a product counted in several places.
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(0)
 
@@ -49,28 +51,81 @@ function Sheet({ count }: { count: StockCount }) {
     .filter((c) => c.status === 'final' && c.count_date < count.count_date)
     .sort((a, b) => b.count_date.localeCompare(a.count_date))[0]
   const previousLines = useStockCountLines(previous?.id)
-  const previousQty = useMemo(
-    () => new Map((previousLines.data ?? []).map((l) => [l.item_id, l.qty])),
+  const previousLine = useMemo(
+    () => new Map((previousLines.data ?? []).map((l) => [l.item_id, l])),
     [previousLines.data],
   )
 
-  const qtyOf = (l: StockCountLine) => (l.id in draft ? Number(draft[l.id]) || 0 : l.qty)
+  const lay = useMemo(
+    () => layout(items.data ?? [], locations.data ?? [], locationGroups.data ?? [], places.data ?? []),
+    [items.data, locations.data, locationGroups.data, places.data],
+  )
+  /** The places a line is split across — only for a product kept in more than one. */
+  const splitOf = (l: StockCountLine) => { const at = lay.placesOf(l.item_id); return at.length > 1 ? at : null }
+  /** What was saved at each place. A figure from before the product was split sits at its first place. */
+  const storedParts = (l: StockCountLine, at: string[]): Record<string, number> =>
+    l.place_qty ?? (l.qty ? { [at[0]]: l.qty } : {})
+  /** What's at one place, as shown in its box. */
+  const partStr = (l: StockCountLine, at: string[], loc: string) => {
+    const k = `${l.id}@${loc}`
+    if (k in draft) return draft[k]
+    const v = storedParts(l, at)[loc]
+    return v ? qtyStr(v) : ''
+  }
+  /** All the places added up, including any saved at a location no longer on the walk. */
+  const partsOf = (l: StockCountLine, at: string[]) => {
+    const out: Record<string, number> = { ...storedParts(l, at) }
+    for (const loc of at) {
+      const v = partStr(l, at, loc).trim()
+      if (v === '') delete out[loc]
+      else out[loc] = Number(v) || 0
+    }
+    return out
+  }
+  const qtyOf = (l: StockCountLine) => {
+    const at = splitOf(l)
+    if (!at) return l.id in draft ? Number(draft[l.id]) || 0 : l.qty
+    return Math.round(Object.values(partsOf(l, at)).reduce((a, b) => a + b, 0) * 1000) / 1000
+  }
+  /** What one row stands for: its place's share when the product is split, else the whole line. */
+  const qtyAt = (l: StockCountLine, loc: string | null) => {
+    const at = splitOf(l)
+    return at && loc ? Number(partStr(l, at, loc)) || 0 : qtyOf(l)
+  }
   const effective = rows.map((l) => ({ ...l, qty: qtyOf(l) }))
   const total = countTotal(effective)
 
   const byItem = useMemo(() => new Map(rows.map((l) => [l.item_id, l])), [rows])
   // Laid out the way you walk the shop: shelf by shelf, door by door (Food → Catalogue → Store layout).
   const sections = useMemo(
-    () => walkSections(items.data ?? [], groups.data ?? [], locations.data ?? [], locationGroups.data ?? [], (item) => byItem.get(item.id)),
-    [items.data, groups.data, locations.data, locationGroups.data, byItem],
+    () => walkSections(items.data ?? [], groups.data ?? [], locations.data ?? [], locationGroups.data ?? [], lay, (item) => byItem.get(item.id)),
+    [items.data, groups.data, locations.data, locationGroups.data, lay, byItem],
   )
   const groupName = useMemo(() => new Map((groups.data ?? []).map((g) => [g.id, g.name])), [groups.data])
+  const locName = useMemo(() => new Map((locations.data ?? []).map((l) => [l.id, l.name])), [locations.data])
   // A line counts as done once a figure is in it, a zero included.
-  const entered = (l: StockCountLine) => (l.id in draft ? draft[l.id].trim() !== '' : l.qty > 0)
+  const entered = (l: StockCountLine, loc: string | null) => {
+    const at = splitOf(l)
+    if (at && loc) {
+      const k = `${l.id}@${loc}`
+      return k in draft ? draft[k].trim() !== '' : loc in storedParts(l, at)
+    }
+    return l.id in draft ? draft[l.id].trim() !== '' : l.qty > 0
+  }
 
-  const dirty = Object.keys(draft).filter((id) => {
-    const line = rows.find((l) => l.id === id)
-    return line && (Number(draft[id]) || 0) !== line.qty
+  // What has changed, ready to save: the new total, and for a split product where it was found.
+  const touched = new Set(Object.keys(draft).map((k) => k.split('@')[0]))
+  const dirty = rows.filter((l) => touched.has(l.id)).flatMap((l): { id: string; qty: number; place_qty: Record<string, number> | null }[] => {
+    const at = splitOf(l)
+    if (!at) {
+      if (!(l.id in draft)) return []
+      const qty = Number(draft[l.id]) || 0
+      return qty !== l.qty ? [{ id: l.id, qty, place_qty: null }] : []
+    }
+    const parts = partsOf(l, at)
+    const same = (a: Record<string, number>, b: Record<string, number>) =>
+      Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[k] === v)
+    return same(parts, storedParts(l, at)) ? [] : [{ id: l.id, qty: qtyOf(l), place_qty: parts }]
   })
 
   // Items added since the sheet was opened have no line on it yet.
@@ -78,7 +133,7 @@ function Sheet({ count }: { count: StockCount }) {
 
   async function save() {
     if (!dirty.length) return
-    await saveLines.mutateAsync(dirty.map((id) => ({ id, qty: Number(draft[id]) || 0 })))
+    await saveLines.mutateAsync(dirty)
     setDraft({})
     setSaved(Date.now())
   }
@@ -121,7 +176,7 @@ function Sheet({ count }: { count: StockCount }) {
       {sections.length > 1 && (
         <nav aria-label="Jump to" className="sticky top-14 z-10 -mx-4 mb-3 flex gap-1.5 overflow-x-auto bg-page/95 px-4 py-2 backdrop-blur">
           {sections.map((s) => {
-            const done = s.rows.filter(({ row }) => entered(row)).length
+            const done = s.rows.filter(({ row }) => entered(row, s.locationId)).length
             return (
               <a key={s.key || 'loose'} href={`#walk-${s.key}`}
                 className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${done === s.rows.length ? 'border-good/40 bg-good/10 text-good' : 'border-line bg-surface text-ink-2'}`}
@@ -142,7 +197,7 @@ function Sheet({ count }: { count: StockCount }) {
       ) : (
         <div className="grid gap-4">
           {sections.map((s) => {
-            const sectionTotal = countTotal(s.rows.map(({ row }) => ({ qty: qtyOf(row), unit_cost: row.unit_cost })))
+            const sectionTotal = countTotal(s.rows.map(({ row }) => ({ qty: qtyAt(row, s.locationId), unit_cost: row.unit_cost })))
             return (
               <section key={s.key || 'loose'} id={`walk-${s.key}`} className="card scroll-mt-28 p-4">
                 <div className="mb-1 flex items-baseline justify-between gap-3">
@@ -151,8 +206,13 @@ function Sheet({ count }: { count: StockCount }) {
                 </div>
                 <ul className="divide-y divide-line">
                   {s.rows.map(({ item, row }) => {
-                    const was = previousQty.get(item.id)
-                    const value = countLineValue({ qty: qtyOf(row), unit_cost: row.unit_cost })
+                    const at = s.locationId ? splitOf(row) : null
+                    const loc = at ? s.locationId! : null
+                    const prev = previousLine.get(item.id)
+                    // Last time's figure for this place when it was split then too, else the whole.
+                    const was = loc && prev?.place_qty ? prev.place_qty[loc] : prev?.qty
+                    const value = countLineValue({ qty: qtyAt(row, loc), unit_cost: row.unit_cost })
+                    const key = loc ? `${row.id}@${loc}` : row.id
                     return (
                       <li key={row.id} className="flex items-center gap-3 py-2">
                         <span className="min-w-0 flex-1">
@@ -162,9 +222,14 @@ function Sheet({ count }: { count: StockCount }) {
                             {aud(row.unit_cost)}/{item.unit}
                             {was != null && was > 0 && ` · was ${qtyStr(was)}`}
                           </span>
+                          {at && (
+                            <span className="block truncate text-xs text-accent">
+                              Also at {at.filter((l) => l !== loc).map((l) => locName.get(l)).join(', ')} · total {qtyStr(qtyOf(row))} {item.unit}
+                            </span>
+                          )}
                         </span>
                         {final ? (
-                          <span className="num w-24 text-right text-sm text-ink-2">{qtyStr(row.qty)} {item.unit}</span>
+                          <span className="num w-24 text-right text-sm text-ink-2">{qtyStr(qtyAt(row, loc))} {item.unit}</span>
                         ) : (
                           <span className="flex shrink-0 items-center gap-1.5">
                             <input
@@ -172,8 +237,8 @@ function Sheet({ count }: { count: StockCount }) {
                               className="field !w-20 !py-2 text-right"
                               inputMode="decimal"
                               placeholder="0"
-                              value={row.id in draft ? draft[row.id] : row.qty ? qtyStr(row.qty) : ''}
-                              onChange={(e) => setDraft({ ...draft, [row.id]: e.target.value })}
+                              value={at && loc ? partStr(row, at, loc) : row.id in draft ? draft[row.id] : row.qty ? qtyStr(row.qty) : ''}
+                              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
                             />
                             <span className="w-7 text-xs text-muted">{item.unit}</span>
                           </span>

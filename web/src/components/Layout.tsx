@@ -131,7 +131,7 @@ export function Layout({ email }: { email?: string }) {
       <header className="sticky top-0 z-20 border-b border-line bg-page/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2.5 lg:gap-3">
           <NavLink to="/" className="flex shrink-0 items-center font-bold" aria-label="Dashboard">
-            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
+            <img src={`${import.meta.env.BASE_URL}favicon.png`} alt="" className="h-7 w-7" />
           </NavLink>
           <BusinessSwitcher />
           {/* One line, always: short labels until there is room for the full ones. */}

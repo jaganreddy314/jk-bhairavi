@@ -34,7 +34,7 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
 function Branding() {
   return (
     <div className="mb-5 flex items-center gap-2.5">
-      <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9" />
+      <img src={`${import.meta.env.BASE_URL}favicon.png`} alt="" className="h-9 w-9" />
       <div>
         <h1 className="text-xl font-bold leading-tight">JK Bhairavi</h1>
         <p className="text-sm text-muted">Sales &amp; expenses</p>

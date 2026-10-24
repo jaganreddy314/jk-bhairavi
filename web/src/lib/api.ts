@@ -8,6 +8,7 @@ import type {
   StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
+  StockBatch, StockLevel,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -179,21 +180,22 @@ const DEPENDENTS: Record<string, string[]> = {
   setup_costs: ['setup_costs'],
   businesses: ['businesses'],
   business_users: ['business_users', 'my_access'],
-  stock_groups: ['stock_groups', 'stock_items', 'stock_location_groups'],
+  stock_groups: ['stock_groups', 'stock_items', 'stock_location_groups', 'stock_batches', 'stock_levels'],
   stock_locations: ['stock_locations', 'stock_location_groups', 'stock_item_places'],
   stock_location_groups: ['stock_location_groups'],
   stock_item_places: ['stock_item_places'],
   // An item's name, cost or group shows up on count sheets and order lines alike.
-  stock_items: ['stock_items', 'item_costs', 'stock_count_lines', 'order_lines', 'item_suppliers'],
+  stock_items: ['stock_items', 'item_costs', 'stock_count_lines', 'order_lines', 'item_suppliers', 'stock_batches', 'stock_levels'],
   purchase_orders: ['purchase_orders', 'purchase_order'],
   // A line changes the order's total, and receiving reprices future sheets.
   // …and ordering a product from a supplier links them and sets that supplier's price.
-  purchase_order_lines: ['order_lines', 'purchase_orders', 'item_costs', 'item_suppliers'],
-  stock_counts: ['stock_counts', 'stock_count', 'food_cost'],
+  purchase_order_lines: ['order_lines', 'purchase_orders', 'item_costs', 'item_suppliers', 'stock_levels'],
+  stock_counts: ['stock_counts', 'stock_count', 'food_cost', 'stock_levels'],
   // A new product can be added from an import, and its sales go with it.
-  item_sales: ['item_sales'],
+  item_sales: ['item_sales', 'stock_levels'],
   item_suppliers: ['item_suppliers'],
-  stock_count_lines: ['stock_count_lines', 'stock_counts', 'food_cost'],
+  stock_count_lines: ['stock_count_lines', 'stock_counts', 'food_cost', 'stock_levels'],
+  stock_batches: ['stock_batches'],
 }
 
 /** Tables whose rows belong to one business; inserts get business_id filled in. */
@@ -303,8 +305,8 @@ export const useCreateBusiness = () => {
 
 // ---------- purchasing & stock ----------
 
-export const useStockGroups = scopedTable<StockGroup>('stock_groups', 'sort')
-export const useStockItems = scopedTable<StockItem>('stock_items', 'name', ['unit_cost'])
+export const useStockGroups = scopedTable<StockGroup>('stock_groups', 'sort', ['min_stock'])
+export const useStockItems = scopedTable<StockItem>('stock_items', 'name', ['unit_cost', 'min_stock'])
 export const useStockLocations = scopedTable<StockLocation>('stock_locations', 'sort')
 
 /** Which categories are kept at which location. */
@@ -544,7 +546,7 @@ export const useSaveItemSales = () => {
 
 /** Everything a write to one of these touches, so every screen showing it refreshes. */
 const ALL_PURCHASING = ['purchase_orders', 'purchase_order', 'order_lines', 'item_costs', 'expenses',
-  'expense', 'all-expenses', 'earliest', 'food_cost', 'item_suppliers'] as const
+  'expense', 'all-expenses', 'earliest', 'food_cost', 'item_suppliers', 'stock_levels'] as const
 
 function useRpc<V>(name: string, keys: readonly string[], args: (v: V) => Record<string, unknown>) {
   const qc = useQueryClient()
@@ -599,9 +601,37 @@ export const useSaveCountLines = () => {
   return useMutation({
     mutationFn: (lines: { id: string; qty: number; place_qty?: Record<string, number> | null }[]) =>
       Promise.all(lines.map(({ id, ...patch }) => run(supabase.from('stock_count_lines').update(patch).eq('id', id)))),
-    onSuccess: () => ['stock_count_lines', 'stock_counts', 'food_cost'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
+    onSuccess: () => ['stock_count_lines', 'stock_counts', 'food_cost', 'stock_levels'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   })
 }
+
+// ---------- stock alerts ----------
+
+/** Every expiry date still on the shelf, soonest first, with when each falls due. */
+export const useStockBatches = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['stock_batches', biz],
+    queryFn: async () =>
+      money(await runAll((a, b) => supabase.from('v_stock_batches').select('*').eq('business_id', biz)
+        .order('expires_on').order('id').range(a, b)), ['qty']) as StockBatch[],
+  })
+}
+
+/** Estimated stock on hand of every product with a minimum. */
+export const useStockLevels = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['stock_levels', biz],
+    queryFn: async () => money(await run(supabase.rpc('stock_levels', { p_business: biz })) as StockLevel[], ['min_stock', 'on_hand']),
+  })
+}
+
+/** Note an expiry date found on a product. The same date again adds to it. */
+export const useAddExpiry = () =>
+  useRpc<{ itemId: string; expiresOn: string; qty: number | null; note?: string }>('add_expiry_date', ['stock_batches'], (v) => ({
+    p_item: v.itemId, p_expires: v.expiresOn, p_qty: v.qty, p_note: v.note ?? null,
+  }))
 
 // ---------- passwords ----------
 

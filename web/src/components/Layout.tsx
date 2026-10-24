@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useBusiness } from '../lib/business'
-import { usePerms } from '../lib/access'
+import { ALERT_PERMS, usePerms } from '../lib/access'
+import { AlertBadge } from './alerts'
 import type { Perm } from '../lib/types'
 
 /** Lucide icons, drawn from their own paths so the app needs no icon library. */
@@ -28,13 +29,14 @@ const GLYPH = {
   chevronsUpDown: <><path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" /></>,
   chevronDown: <path d="m6 9 6 6 6-6" />,
   logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></>,
+  bell: <><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></>,
   calendar: <><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   banknote: <><rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></>,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
 }
 
 /** A page in the navigation, and the areas (any one of them) that open it. */
-interface NavItem { to: string; label: string; glyph: ReactNode; end?: boolean; perms: Perm[] }
+interface NavItem { to: string; label: string; glyph: ReactNode; end?: boolean; perms: Perm[]; badge?: ReactNode }
 
 const OVERVIEW: NavItem[] = [
   { to: '/', label: 'Dashboard', end: true, glyph: GLYPH.dashboard, perms: ['finance'] },
@@ -42,9 +44,13 @@ const OVERVIEW: NavItem[] = [
   { to: '/expenses/new', label: 'Add expense', end: true, glyph: GLYPH.expense, perms: ['finance'] },
 ]
 
+// Not a phone tab: it's in the account sheet there, and the Stock and Home pages show a banner.
+const ALERTS: NavItem = { to: '/alerts', label: 'Stock alerts', glyph: GLYPH.bell, perms: ALERT_PERMS, badge: <AlertBadge /> }
+
 const INVENTORY: NavItem[] = [
   { to: '/orders', label: 'Purchase orders', glyph: GLYPH.orders, perms: ['purchasing'] },
   { to: '/stock', label: 'Stock counts', glyph: GLYPH.stock, perms: ['stock'] },
+  ALERTS,
   { to: '/food', label: 'Food', glyph: GLYPH.food, perms: ['finance', 'catalogue'] },
 ]
 
@@ -182,7 +188,7 @@ function Sidebar({ email }: { email?: string }) {
           .map(([label, items], i) => (
             <div key={label} className="flex flex-col gap-1">
               <GroupLabel first={i === 0}>{label}</GroupLabel>
-              {items.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
+              {items.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}{n.badge}</NavLink>)}
             </div>
           ))}
       </nav>
@@ -278,11 +284,12 @@ function PhoneChrome({ email }: { email?: string }) {
             <span className="block text-xs text-muted">Your account and password</span>
           </span>
         </button>
-        {allowed([...OVERVIEW.slice(1), ...TEAM, ...MORE]).map((m) => (
+        {allowed([...OVERVIEW.slice(1), ALERTS, ...TEAM, ...MORE]).map((m) => (
           <button key={m.to} type="button" onClick={() => go(m.to)}
             className={`${sheetRow} font-medium ${isOn(pathname, m) ? 'text-accent' : 'text-ink-2'}`}>
             <Icon size={20}>{m.glyph}</Icon>
-            <span className="text-[15px]">{m.label}</span>
+            <span className="flex-1 text-[15px]">{m.label}</span>
+            {m.badge}
           </button>
         ))}
         <button type="button" onClick={() => supabase.auth.signOut()} className={`${sheetRow} font-medium text-bad`}>

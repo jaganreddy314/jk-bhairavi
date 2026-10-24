@@ -4,6 +4,7 @@ import { useStartStockCount, useStockCounts, useStockItems } from '../lib/api'
 import { addDays, fmtDay, todayStr, weekdayIdx } from '../lib/dates'
 import { aud } from '../lib/format'
 import { Empty, ErrorBox, Loading, PageHeader, Pill } from '../components/ui'
+import { AlertsBanner } from '../components/alerts'
 
 /**
  * The obvious date to count: the end of the week just gone. A count is the stock on hand
@@ -30,6 +31,7 @@ export default function StockCounts() {
         title="Stock counts"
         subtitle="Count what's on hand at the end of each week. That's what turns purchases into a real food cost."
       />
+      <AlertsBanner />
       <ErrorBox error={counts.error || start.error} />
 
       <section className="card mb-4 p-4 desk:p-5">

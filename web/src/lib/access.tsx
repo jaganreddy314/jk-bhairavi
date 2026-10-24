@@ -15,12 +15,16 @@ export function usePerms() {
   return { can, group: g, isLoading: q.isLoading }
 }
 
+/** Who sees stock alerts: anyone who counts, orders or looks after the products. */
+export const ALERT_PERMS: Perm[] = ['stock', 'purchasing', 'catalogue']
+
 /** Where each page lives and the areas that open it. The first one a person has is their home. */
 export const PAGES: { to: string; perms: Perm[] }[] = [
   { to: '/', perms: ['finance'] },
   { to: '/sales', perms: ['sales'] },
   { to: '/orders', perms: ['purchasing'] },
   { to: '/stock', perms: ['stock'] },
+  { to: '/alerts', perms: ALERT_PERMS },
   { to: '/food/catalogue', perms: ['catalogue'] },
   { to: '/schedule', perms: ['roster'] },
   { to: '/pay-runs', perms: ['payroll'] },

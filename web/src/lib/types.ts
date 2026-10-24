@@ -515,3 +515,30 @@ export interface PublicHoliday {
   /** Part-day holidays start here (Christmas Eve: 6pm). */
   from_minute: number
 }
+
+export interface PayRunLine {
+  id: string
+  pay_run_id: string
+  business_id: string
+  staff_id: string
+  /** Draft: what was typed in (leave, allowances, adjustments). */
+  inputs: import('./payrun').PayInputs
+  /** Finalised: the payslip as paid. */
+  result: (Omit<import('./payrun').PayLine, 'staffId'> & { super_fund?: string | null; leave?: Record<string, number>; person?: Record<string, unknown>; ytd?: { gross: number; tax: number; super: number } }) | null
+  gross: number | null
+  tax: number | null
+  super: number | null
+  net: number | null
+}
+
+export interface PayRun {
+  id: string
+  business_id: string
+  period_start: string
+  period_end: string
+  pay_date: string
+  status: 'draft' | 'finalised'
+  finalised_at: string | null
+  note: string | null
+  pay_run_lines?: PayRunLine[]
+}

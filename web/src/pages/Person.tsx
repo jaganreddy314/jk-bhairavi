@@ -459,7 +459,14 @@ function TaxDrawer({ p, tax, onClose }: { p: Staff; tax: StaffTax | null; onClos
       </Field>
       <label className="flex items-center gap-2.5 text-sm"><input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={v.threshold} onChange={(e) => setV({ ...v, threshold: e.target.checked })} />Claims the tax-free threshold</label>
       <label className="flex items-center gap-2.5 text-sm"><input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={v.studyLoan} onChange={(e) => setV({ ...v, studyLoan: e.target.checked })} />Has a study and training support loan (HELP, VSL, SFSS, SSL, TSL)</label>
-      <Field label="Medicare levy variation" hint="Only if they lodged a variation declaration."><input className="field" value={v.medicare} onChange={(e) => setV({ ...v, medicare: e.target.value })} /></Field>
+      <Field label="Medicare levy variation" hint="Only if they lodged a Medicare levy variation declaration.">
+        <select className="field" value={v.medicare} onChange={(e) => setV({ ...v, medicare: e.target.value })}>
+          <option value="">None</option>
+          <option value="half">Half exemption</option>
+          <option value="full">Full exemption</option>
+          <option value="family">Reduction for spouse or dependants (check withholding by hand)</option>
+        </select>
+      </Field>
     </Drawer>
   )
 }

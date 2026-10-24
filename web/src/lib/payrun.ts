@@ -43,6 +43,8 @@ export interface PayLine {
   net: number
   accrued: { annual: number; personal: number }
   taken: { annual: number; personal: number }
+  /** Hours per day of the period for each rate, as Xero timesheets want them. */
+  days: { label: string; units: number[] }[]
   warnings: string[]
 }
 
@@ -78,6 +80,8 @@ export function payLine(o: {
 
   // Shifts, grouped by what they pay: "Ordinary hours 18h @ $33.05".
   const grouped = new Map<string, PayItem>()
+  const nDays = Math.round((toDate(o.periodEnd).getTime() - toDate(o.periodStart).getTime()) / 864e5) + 1
+  const days = new Map<string, number[]>()
   let worked = 0
   for (const s of o.shifts) {
     worked += (s.end_minute - s.start_minute - s.break_minutes) / 60
@@ -87,6 +91,12 @@ export function payLine(o: {
       const g = grouped.get(key) ?? { label: part.label, hours: 0, rate: part.rate, amount: 0, kind: part.kind, ote: true }
       g.hours! += part.hours
       grouped.set(key, g)
+      const d = Math.round((toDate(s.shift_date).getTime() - toDate(o.periodStart).getTime()) / 864e5)
+      if (d >= 0 && d < nDays) {
+        const u = days.get(part.label) ?? Array(nDays).fill(0)
+        u[d] = Math.round((u[d] + part.hours) * 100) / 100
+        days.set(part.label, u)
+      }
     }
   }
   for (const g of grouped.values()) items.push({ ...g, hours: Math.round(g.hours! * 100) / 100, amount: cent(g.hours! * g.rate!) })
@@ -139,7 +149,8 @@ export function payLine(o: {
 
   return {
     staffId: p.id, items, workedHours: Math.round(worked * 100) / 100, gross, ote, tax, superRate: o.superRate, super: sup, superNote,
-    reimbursements, net: cent(gross - tax.amount + reimbursements), accrued, taken: { annual, personal }, warnings,
+    reimbursements, net: cent(gross - tax.amount + reimbursements), accrued, taken: { annual, personal },
+    days: [...days.entries()].map(([label, units]) => ({ label, units })), warnings,
   }
 }
 

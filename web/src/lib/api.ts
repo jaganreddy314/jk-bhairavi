@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
   Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
-  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine,
+  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroPushResult, XeroRateMap,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
 } from './types'
@@ -624,6 +624,20 @@ export const useChangeMyPassword = () =>
  * it will act, and creates their login if they've been added in Settings but have never
  * signed in.
  */
+/** Call an edge function; a refusal arrives with its reason in the body. */
+async function callFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<T>(name, { body })
+  if (error) {
+    let message = error.message
+    const res = (error as { context?: Response }).context
+    if (res && typeof res.json === 'function') {
+      try { message = (await res.json())?.error ?? message } catch { /* keep the original */ }
+    }
+    throw new Error(message)
+  }
+  return data!
+}
+
 export const useSetPersonPassword = () => {
   const qc = useQueryClient()
   return useMutation({
@@ -914,5 +928,75 @@ export const useAllLeave = () => {
   return useQuery({
     queryKey: ['staff_leave', 'all', biz],
     queryFn: async () => money(await run(supabase.from('staff_leave').select('*').eq('business_id', biz)) as StaffLeave[], ['hours']),
+  })
+}
+
+// ---------- paying people ----------
+
+export interface Payment { staff_id: string; name: string; account_name: string | null; bsb: string | null; account: string | null; net: number }
+
+/** Bank details and net pay for a finalised run. Decrypted, so only the sensitive area may ask. */
+export const usePayRunPayments = () =>
+  useMutation({
+    mutationFn: async (id: string) => money(await run(supabase.rpc('pay_run_payments', { p_id: id })) as Payment[], ['net']),
+  })
+
+export const useSendPayslips = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { payRunId: string; staffIds?: string[] }) =>
+      callFunction<{ sent: string[]; skipped: { name: string; reason: string }[] }>('send-payslips', { pay_run_id: v.payRunId, staff_ids: v.staffIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pay_run'] }),
+  })
+}
+
+// ---------- Xero ----------
+
+export const useXeroConnection = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['xero_connection', biz],
+    queryFn: async () => ((await run(supabase.from('xero_connections').select('business_id, tenant_id, tenant_name, connected_by, connected_at').eq('business_id', biz))) as XeroConnection[])[0] ?? null,
+  })
+}
+
+export const useXeroRateMap = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['xero_rate_map', biz],
+    queryFn: async () => (await run(supabase.from('xero_rate_map').select('*').eq('business_id', biz))) as XeroRateMap[],
+  })
+}
+
+export const useSaveXeroRate = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { pay_label: string; earnings_rate_id: string | null; earnings_rate_name?: string | null }) => {
+      if (!v.earnings_rate_id) return run(supabase.from('xero_rate_map').delete().eq('business_id', biz).eq('pay_label', v.pay_label))
+      return run(supabase.from('xero_rate_map').upsert({ business_id: biz, pay_label: v.pay_label, earnings_rate_id: v.earnings_rate_id, earnings_rate_name: v.earnings_rate_name ?? null }))
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['xero_rate_map'] }),
+  })
+}
+
+export const useXeroCatalog = (enabled: boolean) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['xero_catalog', biz],
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+    queryFn: () => callFunction<XeroCatalog>('xero', { action: 'catalog', business_id: biz }),
+  })
+}
+
+export const useXeroAction = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { action: 'start' | 'disconnect' | 'push'; [k: string]: unknown }) =>
+      callFunction<{ url?: string; results?: XeroPushResult[]; ok?: boolean }>('xero', { ...v, business_id: biz }),
+    onSuccess: () => ['xero_connection', 'xero_catalog', 'pay_run'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   })
 }

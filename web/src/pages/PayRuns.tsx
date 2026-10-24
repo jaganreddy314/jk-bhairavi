@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  useAllLeave, useFinalisePayRun, usePaidThisYear, usePayrollSettings, usePayRun, usePayRuns, usePublicHolidays, useRemove, useReopenPayRun,
-  useSave, useSavePayLine, useShifts, useStaff, useStaffReadiness, useStaffTaxProfile,
+  useAllLeave, useFinalisePayRun, usePaidThisYear, usePayrollSettings, usePayRun, usePayRunPayments, usePayRuns, usePublicHolidays, useRemove, useReopenPayRun,
+  useSave, useSavePayLine, useSendPayslips, useShifts, useStaff, useStaffReadiness, useStaffTaxProfile, useXeroAction, useXeroConnection,
 } from '../lib/api'
 import { addDays, fmtShort, todayStr, weekStart } from '../lib/dates'
 import { aud, audRound, cents, parseMoney } from '../lib/format'
 import { employmentLabel, payRates, rateOn, ruleSetOn } from '../lib/payroll'
 import { financialYearStart, payLine, superDueDate, type ExtraItem, type PayInputs, type PayLine } from '../lib/payrun'
 import { WITHHOLDING_SOURCE, type Frequency } from '../lib/withholding'
-import type { PayRun, Staff } from '../lib/types'
+import type { PayRun, Staff, XeroPushResult } from '../lib/types'
+import { abaFile, bsbOk } from '../lib/aba'
+import { usePerms } from '../lib/access'
 import { fmtDate, PersonAvatar, usePayLookup } from '../components/people'
 import { DeleteButton, Empty, ErrorBox, Field, Kpi, KPI_GRID, Loading, PageHeader, Pill } from '../components/ui'
 
@@ -110,6 +112,12 @@ function RunView({ run }: { run: PayRun }) {
   const remove = useRemove('pay_runs')
   const [open, setOpen] = useState<string | null>(null)
   const draft = run.status === 'draft'
+  const { can } = usePerms()
+  const payments = usePayRunPayments()
+  const sendSlips = useSendPayslips()
+  const xeroConn = useXeroConnection()
+  const xeroAct = useXeroAction()
+  const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string; list?: string[] } | null>(null)
 
   if (staff.isLoading || shifts.isLoading || !pay.ready || settings.isLoading || profiles.isLoading || leave.isLoading || ytd.isLoading) return <Loading />
   const region = settings.data?.holiday_region ?? 'QLD-BNE'
@@ -165,6 +173,55 @@ function RunView({ run }: { run: PayRun }) {
     await finalise.mutateAsync({ id: run.id, lines })
   }
 
+  async function emailSlips() {
+    setNotice(null)
+    const r = await sendSlips.mutateAsync({ payRunId: run.id })
+    setNotice({ tone: r.skipped.length ? 'warn' : 'good', text: `Payslips emailed to ${r.sent.length} ${r.sent.length === 1 ? 'person' : 'people'}.`,
+      list: r.skipped.map((x) => `${x.name}: ${x.reason}`) })
+  }
+
+  async function bankFile() {
+    setNotice(null)
+    const s = settings.data
+    if (!s?.aba_bank_code || !s.aba_apca_id || !s.aba_user_name || !s.aba_bsb || !s.aba_account) {
+      setNotice({ tone: 'warn', text: 'Add your bank details for direct entry in People → Payroll setup → Bank payments first.' })
+      return
+    }
+    const list = await payments.mutateAsync(run.id)
+    const missing = list.filter((p) => !p.bsb || !bsbOk(p.bsb) || !p.account)
+    if (missing.length) {
+      setNotice({ tone: 'warn', text: 'These people have no bank account on file, so the file wasn’t made:', list: missing.map((p) => p.name) })
+      return
+    }
+    const ref = `Wages ${fmtShort(run.period_start)}-${fmtShort(run.period_end)}`
+    const text = abaFile({
+      bankCode: s.aba_bank_code, userName: s.aba_user_name, apcaId: s.aba_apca_id, description: 'WAGES', processDate: run.pay_date,
+      fromBsb: s.aba_bsb, fromAccount: s.aba_account, remitter: s.aba_user_name.slice(0, 16), balancing: s.aba_balancing,
+      payments: list.map((p) => ({ bsb: p.bsb!, account: p.account!, name: p.account_name || p.name, cents: Math.round(p.net * 100), reference: ref })),
+    })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+    a.download = `wages-${run.pay_date}.aba`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    setNotice({ tone: 'good', text: `Bank file downloaded: ${list.length} payments, ${aud(sum(list.map((p) => p.net)))}. Upload it in your bank's bulk payments.` })
+  }
+
+  async function sendToXero() {
+    setNotice(null)
+    const r = await xeroAct.mutateAsync({
+      action: 'push', pay_run_id: run.id, period_start: run.period_start, period_end: run.period_end,
+      timesheets: rows.filter((x) => (x.line.days ?? []).length).map((x) => ({ staff_id: x.person.id, lines: x.line.days })),
+    })
+    const res = r.results ?? []
+    const leaveOrExtras = rows.some((x) => x.line.taken.annual || x.line.taken.personal || x.line.items.some((i) => ['allowance', 'overtime', 'adjustment', 'reimbursement'].includes(i.kind)))
+    setNotice({
+      tone: res.some((x) => x.status === 'skipped') ? 'warn' : 'good',
+      text: `Xero: ${xeroSummary(res)}.${leaveOrExtras ? ' Leave and extra items aren’t sent — add those in Xero’s pay run.' : ''}`,
+      list: res.filter((x) => x.status === 'skipped').map((x) => `${x.name}: ${x.note}`),
+    })
+  }
+
   return (
     <div>
       <Link to="/pay-runs" className="text-[13px] font-medium text-ink-2 hover:text-ink">‹ Pay runs</Link>
@@ -183,6 +240,9 @@ function RunView({ run }: { run: PayRun }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {xeroConn.data && (
+            <button type="button" className="btn" disabled={xeroAct.isPending} onClick={sendToXero}>{xeroAct.isPending ? 'Sending…' : 'Send hours to Xero'}</button>
+          )}
           {draft ? (
             <>
               <DeleteButton label="Delete draft" busy={remove.isPending} onConfirm={async () => { await remove.mutateAsync(run.id); nav('/pay-runs') }} />
@@ -192,12 +252,23 @@ function RunView({ run }: { run: PayRun }) {
           ) : (
             <>
               <Link to={`/pay-runs/${run.id}/payslips`} className="btn">Payslips</Link>
+              <button type="button" className="btn" disabled={sendSlips.isPending} onClick={emailSlips}>{sendSlips.isPending ? 'Sending…' : 'Email payslips'}</button>
+              {can('sensitive') && <button type="button" className="btn" disabled={payments.isPending} onClick={bankFile}>Bank file (ABA)</button>}
               <Confirm label="Reopen" confirm="Reopen · remove its expenses and leave" busy={reopen.isPending} onConfirm={() => reopen.mutateAsync(run.id)} />
             </>
           )}
         </div>
       </div>
-      <div className="mt-3"><ErrorBox error={finalise.error || reopen.error || save.error || remove.error} /></div>
+      <div className="mt-3"><ErrorBox error={finalise.error || reopen.error || save.error || remove.error || payments.error || sendSlips.error || xeroAct.error} /></div>
+      {notice && (
+        <div role="status" className={`mt-2 rounded-[10px] border px-3.5 py-2.5 text-sm ${notice.tone === 'good' ? 'border-[#ABEFC6] bg-[#ECFDF3] text-[#067647] dark:border-[#085D3A] dark:bg-[#053321] dark:text-[#75E0A7]' : 'border-warn-line bg-warn-bg text-warn-ink'}`}>
+          {notice.text}
+          {notice.list && <ul className="mt-1 list-disc pl-5 text-[13px]">{notice.list.map((x) => <li key={x}>{x}</li>)}</ul>}
+        </div>
+      )}
+      {run.xero_result && !notice && (
+        <p className="mt-2 text-xs text-muted">Hours last sent to Xero {new Date(run.xero_sent_at!).toLocaleString('en-AU')}: {xeroSummary(run.xero_result)}.</p>
+      )}
 
       <div className={`${KPI_GRID} mt-2`}>
         <Kpi label="Gross wages" value={aud(tot('gross'))} note={`${rows.filter((r) => r.line.gross > 0).length} people · ${sum(rows.map((r) => r.line.workedHours))}h worked`} />
@@ -227,7 +298,7 @@ function RunView({ run }: { run: PayRun }) {
                 <PersonAvatar person={r.person} size={32} />
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{r.person.name}</span>
-                  <span className="block truncate text-xs text-muted">{employmentLabel(r.person.employment_type)} · {r.line.tax.basis}{r.line.warnings.length ? ` · ${r.line.warnings.length} to check` : ''}</span>
+                  <span className="block truncate text-xs text-muted">{employmentLabel(r.person.employment_type)} · {r.line.tax.basis}{r.line.warnings.length ? ` · ${r.line.warnings.length} to check` : ''}{saved.get(r.person.id)?.emailed_at ? ' · payslip emailed' : ''}</span>
                 </span>
               </span>
               <span className="hidden text-right text-ink-2 desk:block">{r.line.workedHours}</span>
@@ -395,4 +466,9 @@ export function Payslips() {
       })}
     </div>
   )
+}
+
+const xeroSummary = (res: XeroPushResult[]) => {
+  const n = (s: XeroPushResult['status']) => res.filter((x) => x.status === s).length
+  return [n('sent') && `${n('sent')} sent`, n('updated') && `${n('updated')} updated`, n('skipped') && `${n('skipped')} skipped`].filter(Boolean).join(', ') || 'nothing to send'
 }

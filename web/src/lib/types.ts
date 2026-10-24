@@ -108,6 +108,7 @@ export interface Staff {
   fortnight_hour_limit: number | null
   /** Part-time agreed days: 1 = Monday … 7 = Sunday. */
   agreed_dows: number[] | null
+  xero_employee_id: string | null
   right_to_work: string | null
   right_to_work_checked_on: string | null
   fwis_given_on: string | null
@@ -173,6 +174,13 @@ export interface PayrollSettings {
   /** Minutes after midnight. */
   store_open: number
   store_close: number
+  aba_bank_code: string | null
+  aba_apca_id: string | null
+  aba_user_name: string | null
+  aba_bsb: string | null
+  aba_account: string | null
+  aba_balancing: boolean
+  payslip_reply_to: string | null
 }
 
 export type TfnStatus = 'missing' | 'provided' | 'applied' | 'under_18' | 'pensioner' | 'exempt'
@@ -529,6 +537,7 @@ export interface PayRunLine {
   tax: number | null
   super: number | null
   net: number | null
+  emailed_at: string | null
 }
 
 export interface PayRun {
@@ -540,5 +549,16 @@ export interface PayRun {
   status: 'draft' | 'finalised'
   finalised_at: string | null
   note: string | null
+  xero_sent_at: string | null
+  xero_result: XeroPushResult[] | null
   pay_run_lines?: PayRunLine[]
+}
+
+export interface XeroPushResult { name: string; status: 'sent' | 'updated' | 'skipped'; note?: string }
+export interface XeroConnection { business_id: string; tenant_id: string; tenant_name: string | null; connected_by: string | null; connected_at: string }
+export interface XeroRateMap { business_id: string; pay_label: string; earnings_rate_id: string; earnings_rate_name: string | null }
+export interface XeroCatalog {
+  employees: { id: string; name: string; calendar: string | null }[]
+  earningsRates: { id: string; name: string; type: string; rateType: string }[]
+  calendars: { id: string; name: string; type: string }[]
 }

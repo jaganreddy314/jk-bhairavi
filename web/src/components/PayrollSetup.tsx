@@ -9,6 +9,7 @@ import { aud, parseMoney } from '../lib/format'
 import { rateOn } from '../lib/payroll'
 import type { PayrollSettings } from '../lib/types'
 import { fmtDate, readinessOf, usePayLookup } from './people'
+import { BankPaymentsCard, PayslipEmailCard, XeroCard } from './PayrollConnections'
 import { Drawer, ErrorBox, Field, Loading, Segmented } from './ui'
 
 const DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -82,6 +83,9 @@ export function PayrollSetup() {
           ['Status', s?.stp_status === 'connected' ? 'Connected' : null, 'Not connected'],
           ['Version', 'STP Phase 2'],
         ]} note="Lodging with the ATO goes through ATO-approved software. This comes with pay runs, as an export for a sending service." />
+        <XeroCard />
+        <BankPaymentsCard />
+        <PayslipEmailCard />
         <AwardRates />
       </div>
 

@@ -19,7 +19,7 @@ export interface BusinessUser {
 }
 
 /** An area of the app a security group can open. */
-export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'people' | 'payroll' | 'sensitive' | 'admin'
+export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'people' | 'roster' | 'payroll' | 'sensitive' | 'admin'
 
 export interface SecurityGroup {
   id: string
@@ -106,6 +106,8 @@ export interface Staff {
   visa_type: string | null
   visa_expiry: string | null
   fortnight_hour_limit: number | null
+  /** Part-time agreed days: 1 = Monday … 7 = Sunday. */
+  agreed_dows: number[] | null
   right_to_work: string | null
   right_to_work_checked_on: string | null
   fwis_given_on: string | null
@@ -166,6 +168,11 @@ export interface PayrollSettings {
   super_rate: number
   super_payment_method: string | null
   stp_status: string
+  /** 'QLD-BNE' adds the Brisbane show day to the statewide holidays. */
+  holiday_region: 'QLD' | 'QLD-BNE'
+  /** Minutes after midnight. */
+  store_open: number
+  store_close: number
 }
 
 export type TfnStatus = 'missing' | 'provided' | 'applied' | 'under_18' | 'pensioner' | 'exempt'
@@ -465,4 +472,46 @@ export interface ItemSupplier {
   last_unit_cost: number | null
   carton_cost: number | null
   last_bought_on: string | null
+}
+
+/** What the roster knows about a person: enough to cost and check shifts, nothing personal. */
+export type RosterPerson = Pick<Staff, 'id' | 'name' | 'first_name' | 'last_name' | 'kind' | 'status' | 'employment_type' | 'date_of_birth'
+  | 'award_code' | 'classification_id' | 'above_award' | 'ordinary_hours' | 'agreed_dows' | 'fortnight_hour_limit' | 'start_date' | 'end_date' | 'role_title'>
+
+export interface Shift {
+  id: string
+  business_id: string
+  staff_id: string
+  shift_date: string
+  /** Minutes after midnight. */
+  start_minute: number
+  end_minute: number
+  break_minutes: number
+  note: string | null
+}
+
+export interface RosterWeek {
+  business_id: string
+  week_start: string
+  published_at: string | null
+  changed_since_publish: boolean
+}
+
+/** When someone can work on a weekday (1 = Monday). No row means any time. */
+export interface StaffAvailability {
+  staff_id: string
+  business_id: string
+  dow: number
+  available: boolean
+  from_minute: number | null
+  to_minute: number | null
+  note: string | null
+}
+
+export interface PublicHoliday {
+  holiday_date: string
+  region: 'QLD' | 'QLD-BNE'
+  name: string
+  /** Part-day holidays start here (Christmas Eve: 6pm). */
+  from_minute: number
 }

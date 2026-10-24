@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
   Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
-  StaffReadiness, StaffSuper, StaffTax,
+  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
 } from './types'
@@ -170,6 +170,8 @@ const DEPENDENTS: Record<string, string[]> = {
   security_groups: ['security_groups', 'my_access'],
   staff_super: ['staff_super', 'staff_readiness'],
   staff_leave: ['staff_leave'],
+  shifts: ['shifts', 'roster_weeks'],
+  staff_availability: ['staff_availability'],
   partners: ['partners'],
   partner_contributions: ['partner_contributions'],
   setup_costs: ['setup_costs'],
@@ -197,7 +199,7 @@ const DEPENDENTS: Record<string, string[]> = {
 // copies business_id from the parent order or count, which is what row-level security checks.
 const SCOPED = new Set(['sales_days', 'expenses', 'recurring_expenses', 'suppliers', 'staff', 'partners',
   'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items',
-  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups'])
+  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups', 'shifts'])
 
 function useWrite<V>(tableName: string, fn: (v: V) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
   const qc = useQueryClient()
@@ -770,3 +772,65 @@ export const useSaveStaffLeave = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['staff_leave'] }),
   })
 }
+
+// ---------- schedule ----------
+
+export const useRosterPeople = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['roster_people', biz],
+    queryFn: async () => money(await run(supabase.rpc('roster_people', { p_business: biz })) as RosterPerson[], ['above_award', 'ordinary_hours', 'fortnight_hour_limit']),
+  })
+}
+
+export const useShifts = (from: string, to: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['shifts', biz, from, to],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('shifts').select('*').eq('business_id', biz)
+        .gte('shift_date', from).lte('shift_date', to).order('shift_date').order('start_minute').order('id').range(a, b))) as Shift[],
+  })
+}
+
+/** Several shifts in one insert — copying last week. */
+export const useAddShifts = () => {
+  const biz = useBusinessId()
+  return useWrite<Omit<Shift, 'id' | 'business_id'>[]>('shifts', (rows) =>
+    supabase.from('shifts').insert(rows.map((r) => ({ ...r, business_id: biz }))))
+}
+
+export const useRosterWeek = (weekStart: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['roster_weeks', biz, weekStart],
+    queryFn: async () => ((await run(supabase.from('roster_weeks').select('*').eq('business_id', biz).eq('week_start', weekStart))) as RosterWeek[])[0] ?? null,
+  })
+}
+
+export const usePublishWeek = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (weekStart: string) => run(supabase.from('roster_weeks').upsert({
+      business_id: biz, week_start: weekStart, published_at: new Date().toISOString(), changed_since_publish: false,
+    })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['roster_weeks'] }),
+  })
+}
+
+export const useAvailability = scopedTable<StaffAvailability>('staff_availability', 'dow')
+
+export const useSaveAvailability = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { staffId: string; rows: Omit<StaffAvailability, 'business_id' | 'staff_id'>[] }) => {
+      await run(supabase.from('staff_availability').delete().eq('staff_id', v.staffId))
+      if (v.rows.length) await run(supabase.from('staff_availability').insert(v.rows.map((r) => ({ ...r, staff_id: v.staffId, business_id: biz }))))
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff_availability'] }),
+  })
+}
+
+export const usePublicHolidays = globalTable<PublicHoliday>('public_holidays', 'holiday_date')

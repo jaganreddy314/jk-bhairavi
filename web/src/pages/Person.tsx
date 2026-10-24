@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  useAwards, usePayrollSettings, useSave, useSaveStaffBank, useSaveStaffLeave, useSaveStaffSuper, useSaveStaffTax, useStaff,
+  useAvailability, useAwards, usePayrollSettings, useSave, useSaveAvailability, useSaveStaffBank, useSaveStaffLeave, useSaveStaffSuper, useSaveStaffTax, useStaff,
   useStaffBank, useStaffLeave, useStaffReadiness, useStaffSuper, useStaffTax,
 } from '../lib/api'
 import { usePerms } from '../lib/access'
 import { todayStr } from '../lib/dates'
 import { aud, parseMoney } from '../lib/format'
-import { ageOn, classificationOptions, EMPLOYMENT, employmentLabel, payRates, rateOn, ruleSetOn } from '../lib/payroll'
-import type { Staff, StaffLeave, StaffSuper, StaffTax, TfnStatus } from '../lib/types'
+import { ageOn, classificationOptions, DOW_SHORT, EMPLOYMENT, employmentLabel, fmtTime, payRates, rateOn, ruleSetOn } from '../lib/payroll'
+import type { Staff, StaffAvailability, StaffLeave, StaffSuper, StaffTax, TfnStatus } from '../lib/types'
 import { fmtDate, PersonAvatar, readinessOf, startsLater, usePayLookup } from '../components/people'
 import { Drawer, ErrorBox, Field, Loading, MoneyInput, Pill, Segmented } from '../components/ui'
 
@@ -22,7 +22,7 @@ export default function Person() {
   return <Profile key={p.id} p={p} />
 }
 
-type Editing = 'personal' | 'employment' | 'tax' | 'super' | 'bank' | 'leave' | null
+type Editing = 'personal' | 'employment' | 'availability' | 'tax' | 'super' | 'bank' | 'leave' | null
 const row = (label: string, value: ReactNode, missing?: string) => ({ label, value, missing })
 
 function Profile({ p }: { p: Staff }) {
@@ -34,6 +34,7 @@ function Profile({ p }: { p: Staff }) {
   const sup = useStaffSuper(can('sensitive') ? p.id : undefined)
   const bank = useStaffBank(can('sensitive') ? p.id : undefined)
   const leave = useStaffLeave(p.id)
+  const avail = useAvailability()
   const [editing, setEditing] = useState<Editing>(null)
   const edit = can('payroll')
 
@@ -99,6 +100,13 @@ function Profile({ p }: { p: Staff }) {
               ...(p.employment_type === 'casual' ? [row('Casual Employment Information Statement', p.ceis_given_on ? `Given ${fmtDate(p.ceis_given_on)}` : null, 'Not given')] : []),
               row('Right to work', p.right_to_work ? `${p.right_to_work}${p.right_to_work_checked_on ? ` · checked ${fmtDate(p.right_to_work_checked_on)}` : ''}` : null, 'Not checked'),
               ...(p.visa_type ? [row('Visa', `${p.visa_type}${p.visa_expiry ? ` · until ${fmtDate(p.visa_expiry)}` : ''}`)] : []),
+            ]} />
+
+          <Card title="Availability" onEdit={can('roster', 'payroll') ? () => setEditing('availability') : undefined}
+            note="The roster flags any shift outside these."
+            rows={[
+              ...(p.employment_type === 'part_time' ? [row('Agreed days', p.agreed_dows?.length ? p.agreed_dows.map((d) => DOW_SHORT[d - 1]).join(', ') : null, 'Not set')] : []),
+              ...DOW_SHORT.map((d, i) => row(d, availText((avail.data ?? []).find((a) => a.staff_id === p.id && a.dow === i + 1)))),
             ]} />
 
           {can('sensitive') ? (
@@ -167,6 +175,7 @@ function Profile({ p }: { p: Staff }) {
 
       {editing === 'personal' && <PersonalDrawer p={p} onClose={close} />}
       {editing === 'employment' && <EmploymentDrawer p={p} onClose={close} />}
+      {editing === 'availability' && <AvailabilityDrawer p={p} rows={(avail.data ?? []).filter((a) => a.staff_id === p.id)} onClose={close} />}
       {editing === 'tax' && <TaxDrawer p={p} tax={tax.data ?? null} onClose={close} />}
       {editing === 'super' && <SuperDrawer p={p} sup={sup.data ?? null} onClose={close} />}
       {editing === 'bank' && <BankDrawer p={p} last4={bank.data?.account_last4 ?? null} name={bank.data?.account_name ?? ''} bsb={bank.data?.bsb ?? ''} onClose={close} />}
@@ -544,6 +553,75 @@ function LeaveDrawer({ p, leave, onClose }: { p: Staff; leave: StaffLeave[]; onC
       <Field label="Personal / carer’s leave (hours)"><input inputMode="decimal" className="field" value={v.personal} onChange={(e) => setV({ ...v, personal: e.target.value })} /></Field>
       <Field label="Long service leave (hours)"><input inputMode="decimal" className="field" value={v.long_service} onChange={(e) => setV({ ...v, long_service: e.target.value })} /></Field>
       <Field label="As of"><input type="date" className="field" value={v.as_of} onChange={(e) => setV({ ...v, as_of: e.target.value })} /></Field>
+    </Drawer>
+  )
+}
+
+const availText = (a: StaffAvailability | undefined) =>
+  !a ? 'Any time'
+    : !a.available ? `Not available${a.note ? ` · ${a.note}` : ''}`
+    : [a.from_minute != null && `From ${fmtTime(a.from_minute)}`, a.to_minute != null && `until ${fmtTime(a.to_minute)}`].filter(Boolean).join(' ') + (a.note ? ` · ${a.note}` : '') || 'Any time'
+
+type Avail = 'any' | 'off' | 'limited'
+
+function AvailabilityDrawer({ p, rows, onClose }: { p: Staff; rows: StaffAvailability[]; onClose: () => void }) {
+  const saveAvail = useSaveAvailability()
+  const save = useSave('staff')
+  const [agreed, setAgreed] = useState<number[]>(p.agreed_dows ?? [])
+  const [days, setDays] = useState(() => DOW_SHORT.map((_, i) => {
+    const a = rows.find((r) => r.dow === i + 1)
+    return { kind: (!a ? 'any' : !a.available ? 'off' : 'limited') as Avail, from: a?.from_minute ?? null, to: a?.to_minute ?? null, note: a?.note ?? '' }
+  }))
+  const times = Array.from({ length: 39 }, (_, i) => 300 + i * 30)
+  const setDay = (i: number, patch: Partial<(typeof days)[number]>) => setDays(days.map((d, j) => (j === i ? { ...d, ...patch } : d)))
+  async function submit() {
+    await saveAvail.mutateAsync({
+      staffId: p.id,
+      rows: days.flatMap((d, i) => d.kind === 'any' ? [] : [{
+        dow: i + 1, available: d.kind !== 'off', from_minute: d.kind === 'limited' ? d.from : null, to_minute: d.kind === 'limited' ? d.to : null, note: d.note.trim() || null,
+      }]),
+    })
+    if (p.employment_type === 'part_time') await save.mutateAsync({ id: p.id, agreed_dows: agreed.length ? [...agreed].sort() : null })
+    onClose()
+  }
+  return (
+    <Drawer title="Availability" sub="When they can work. Shifts outside this are flagged on the roster." onClose={onClose} onSubmit={submit}
+      footer={<Footer onClose={onClose} busy={saveAvail.isPending || save.isPending} />}>
+      <ErrorBox error={saveAvail.error || save.error} />
+      {p.employment_type === 'part_time' && (
+        <div>
+          <span className="label">Agreed days</span>
+          <div className="flex flex-wrap gap-1.5">
+            {DOW_SHORT.map((d, i) => (
+              <button key={d} type="button" className="chip" aria-pressed={agreed.includes(i + 1)}
+                onClick={() => setAgreed(agreed.includes(i + 1) ? agreed.filter((x) => x !== i + 1) : [...agreed, i + 1])}>{d}</button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted">Part-time employees work the days agreed in writing; others count as a change to their hours.</p>
+        </div>
+      )}
+      {days.map((d, i) => (
+        <div key={i} className="grid gap-2 rounded-[10px] border border-line p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold">{DOW_SHORT[i]}</span>
+            <Segmented ariaLabel={`${DOW_SHORT[i]} availability`} value={d.kind} onChange={(k) => setDay(i, { kind: k, from: k === 'limited' ? d.from ?? 900 : null })}
+              options={[{ value: 'any', label: 'Any time' }, { value: 'limited', label: 'Some hours' }, { value: 'off', label: 'Not available' }]} />
+          </div>
+          {d.kind === 'limited' && (
+            <div className="grid grid-cols-2 gap-2">
+              <select aria-label="From" className="field" value={d.from ?? ''} onChange={(e) => setDay(i, { from: e.target.value === '' ? null : Number(e.target.value) })}>
+                <option value="">From opening</option>
+                {times.map((t) => <option key={t} value={t}>From {fmtTime(t)}</option>)}
+              </select>
+              <select aria-label="Until" className="field" value={d.to ?? ''} onChange={(e) => setDay(i, { to: e.target.value === '' ? null : Number(e.target.value) })}>
+                <option value="">Until closing</option>
+                {times.map((t) => <option key={t} value={t}>Until {fmtTime(t)}</option>)}
+              </select>
+            </div>
+          )}
+          {d.kind !== 'any' && <input className="field" aria-label="Why" value={d.note} onChange={(e) => setDay(i, { note: e.target.value })} placeholder="e.g. school, uni" />}
+        </div>
+      ))}
     </Drawer>
   )
 }

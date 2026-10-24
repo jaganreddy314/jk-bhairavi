@@ -22,6 +22,7 @@ export const PAGES: { to: string; perms: Perm[] }[] = [
   { to: '/orders', perms: ['purchasing'] },
   { to: '/stock', perms: ['stock'] },
   { to: '/food/catalogue', perms: ['catalogue'] },
+  { to: '/schedule', perms: ['roster'] },
   { to: '/people', perms: ['people', 'payroll'] },
   { to: '/settings', perms: ['admin'] },
 ]

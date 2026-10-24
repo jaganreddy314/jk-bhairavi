@@ -17,7 +17,6 @@ const GLYPH = {
   orders: <><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></>,
   stock: <><rect width="8" height="4" x="8" y="2" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M12 11h4" /><path d="M12 16h4" /><path d="M8 11h.01" /><path d="M8 16h.01" /></>,
   food: <><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></>,
-  more: <><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" /></>,
   list: <><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></>,
   repeat: <><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></>,
   settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>,
@@ -43,7 +42,7 @@ const INVENTORY: NavItem[] = [
   { to: '/food', label: 'Food', glyph: GLYPH.food },
 ]
 
-/** Needed regularly, but not every day: under “More” on a computer, in the account sheet on a phone. */
+/** Needed regularly, but not every day: under “Manage” on a computer, in the account sheet on a phone. */
 const MORE: NavItem[] = [
   { to: '/expenses', label: 'Expenses', end: true, glyph: GLYPH.list },
   { to: '/recurring', label: 'Standard expenses', glyph: GLYPH.repeat },
@@ -148,11 +147,6 @@ const GroupLabel = ({ children, first }: { children: ReactNode; first?: boolean 
 )
 
 function Sidebar({ email }: { email?: string }) {
-  const { pathname } = useLocation()
-  const moreActive = MORE.some((m) => isOn(pathname, m))
-  const [moreOpen, setMoreOpen] = useState(moreActive)
-  useEffect(() => { if (moreActive) setMoreOpen(true) }, [moreActive])
-
   return (
     <aside className="sticky top-0 hidden h-dvh flex-col gap-1 overflow-y-auto border-r border-line bg-surface px-3 py-4 desk:flex">
       <div className="px-2 pb-3.5 pt-1.5">
@@ -163,13 +157,8 @@ function Sidebar({ email }: { email?: string }) {
         {OVERVIEW.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
         <GroupLabel>Inventory</GroupLabel>
         {INVENTORY.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
-        <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}
-          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left font-medium text-ink-2 hover:bg-surface-2">
-          <Icon>{GLYPH.more}</Icon>More
-        </button>
-        {moreOpen && MORE.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} className={(s) => `${navClass(s)} pl-9`}>{n.label}</NavLink>
-        ))}
+        <GroupLabel>Manage</GroupLabel>
+        {MORE.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
       </nav>
       <div className="mt-auto flex items-center gap-2.5 border-t border-line px-1.5 pt-3">
         <Avatar email={email} size={32} />

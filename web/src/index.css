@@ -228,6 +228,17 @@ button {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Dropdowns draw their own arrow, so it sits clear of the edge at every size and in both themes. */
+select.field {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2398a2b3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  text-overflow: ellipsis;
+}
 .field-lg {
   font-size: 24px;
   font-weight: 600;

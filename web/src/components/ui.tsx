@@ -99,3 +99,55 @@ export function Segmented<T extends string>({
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="card px-4 py-8 text-center text-sm text-muted">{children}</div>
 }
+
+/** A money field with a "$" in front. `lg` is the big close-of-trade style input. */
+export function MoneyInput({ value, onChange, size = 'lg', className = '', ...rest }: {
+  value: string; onChange: (v: string) => void; size?: 'lg' | 'sm'; className?: string
+  id?: string; placeholder?: string; disabled?: boolean; 'aria-label'?: string; autoFocus?: boolean
+}) {
+  const lg = size === 'lg'
+  return (
+    <div className={`flex items-center gap-1.5 border border-input-line bg-surface focus-within:border-accent focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_20%,transparent)] has-[:disabled]:opacity-45 ${
+      lg ? 'h-14 rounded-[10px] px-3.5' : 'h-[38px] rounded-lg px-2.5'} ${className}`}>
+      <span className={lg ? 'text-[22px] text-faint' : 'text-faint'}>$</span>
+      <input inputMode="decimal" autoComplete="off" placeholder={rest.placeholder ?? '0.00'} {...rest} value={value} onChange={(e) => onChange(e.target.value)}
+        className={`num min-w-0 flex-1 bg-transparent text-ink outline-none focus-visible:outline-none disabled:cursor-not-allowed ${lg ? 'text-2xl font-semibold' : 'text-base font-semibold desk:text-sm'}`} />
+    </div>
+  )
+}
+
+export type PillTone = 'success' | 'warn' | 'neutral' | 'info' | 'danger'
+const PILL: Record<PillTone, { cls: string; dot: string }> = {
+  success: { cls: 'bg-[#ECFDF3] text-[#067647] dark:bg-[#053321] dark:text-[#75E0A7]', dot: '#17B26A' },
+  warn: { cls: 'bg-[#FFFAEB] text-[#B54708] dark:bg-[#4E1D09] dark:text-[#FEC84B]', dot: '#F79009' },
+  neutral: { cls: 'bg-surface-2 text-ink-2', dot: '#98A2B3' },
+  info: { cls: 'bg-[#EFF8FF] text-[#175CD3] dark:bg-[#102A56] dark:text-[#84CAFF]', dot: '#2E90FA' },
+  danger: { cls: 'bg-[#FEF3F2] text-[#B42318] dark:bg-[#55160C] dark:text-[#FDA29B]', dot: '#D92D20' },
+}
+export const PILL_DOT = (tone: PillTone) => PILL[tone].dot
+
+/** Rounded status label with a coloured dot: Saved, Unsaved, Received, Draft… */
+export function Pill({ tone, children }: { tone: PillTone; children: ReactNode }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full py-0.5 pl-[7px] pr-[9px] text-xs font-medium ${PILL[tone].cls}`}>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: PILL[tone].dot }} />
+      {children}
+    </span>
+  )
+}
+
+/**
+ * Floats at the bottom of the page while there is something to save: above the tab bar
+ * on a phone, 16px off the bottom on a computer.
+ */
+export function SaveBar({ dirty, message, children }: { dirty: boolean; message: ReactNode; children: ReactNode }) {
+  return (
+    <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+76px)] z-10 mt-3 flex flex-wrap items-center gap-2.5 rounded-xl border border-line bg-surface py-2.5 pl-4 pr-3 shadow-[var(--shadow-float)] desk:bottom-4">
+      <span className="flex min-w-40 flex-1 items-center gap-2 text-[13px] text-ink-2">
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dirty ? PILL.warn.dot : PILL.success.dot }} />
+        {message}
+      </span>
+      {children}
+    </div>
+  )
+}

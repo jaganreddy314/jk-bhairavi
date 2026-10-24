@@ -269,6 +269,16 @@ button {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
+/* A save button that has nothing left to save: tinted, reading "Saved". */
+.btn-saved,
+.btn-saved:disabled,
+.btn-saved:hover {
+  background: var(--accent-tint);
+  border-color: var(--accent-tint);
+  color: var(--accent);
+  opacity: 1;
+  box-shadow: none;
+}
 .btn-danger {
   color: var(--bad);
 }

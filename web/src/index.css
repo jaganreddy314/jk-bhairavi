@@ -1,23 +1,51 @@
 @import "tailwindcss";
+@import "@fontsource-variable/geist";
+
+/* `dark:` follows the in-app toggle first, then the device setting. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+/* Desktop sidebar from 760px up; phones get the top bar and bottom tab bar below it. */
+@theme {
+  --breakpoint-desk: 47.5rem;
+}
 
 /* All colours are tokens so light/dark swap in one place. Category colours are fixed everywhere. */
 :root {
   color-scheme: light;
-  --page: #f7f7f5;
+  --page: #f6f7f9;
   --surface: #ffffff;
-  --surface-2: #f1f0ec;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #7a7873;
-  --line: #e1e0d9;
-  --axis: #c3c2b7;
-  --accent: #2a78d6;
+  --surface-2: #f2f4f7;   /* subtle fills, hover, neutral tags */
+  --hover: #f9fafb;       /* table header, row hover */
+  --track: #eef0f3;       /* segmented control and bar tracks */
+  --ink: #101828;
+  --ink-2: #475467;
+  --muted: #667085;
+  --faint: #98a2b3;
+  --line: #e4e7ec;
+  --line-2: #f2f4f7;      /* dividers between rows */
+  --input-line: #d0d5dd;
+  --axis: #d0d5dd;
+  --accent: #0f766e;
+  --accent-hover: #115e59;
+  --accent-tint: #e6f4f1;
+  --accent-tint-line: #99d5cb;
   --accent-ink: #ffffff;
-  --good: #006300;
-  --bad: #c42f2f;
-  --warn-bg: #fff6e0;
-  --warn-line: #f0d48a;
-  --warn-ink: #6b4a00;
+  --good: #067647;
+  --bad: #d92d20;
+  --warn-bg: #fffaeb;
+  --warn-line: #fedf89;
+  --warn-ink: #93370d;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-float: 0 12px 24px rgba(16, 24, 40, 0.12);
 
   --c-sales: #2a78d6;
   --c-cash: #86b6ef;   /* cash collected: a lighter step of the sales blue, never a category */
@@ -35,21 +63,31 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #0f0f0e;
-    --surface: #1a1a19;
-    --surface-2: #242422;
-    --ink: #ffffff;
-    --ink-2: #c3c2b7;
-    --muted: #9a988f;
-    --line: #2c2c2a;
-    --axis: #45443f;
-    --accent: #3987e5;
-    --accent-ink: #ffffff;
-    --good: #2fbf2f;
-    --bad: #ef6b6b;
-    --warn-bg: #2e2510;
-    --warn-line: #5c4a1a;
-    --warn-ink: #f3d58c;
+    --page: #0c111d;
+    --surface: #161b26;
+    --surface-2: #1f242f;
+    --hover: #1a202b;
+    --track: #1f242f;
+    --ink: #f5f5f6;
+    --ink-2: #cecfd2;
+    --muted: #94969c;
+    --faint: #85888e;
+    --line: #2a303b;
+    --line-2: #1f242f;
+    --input-line: #333741;
+    --axis: #333741;
+    --accent: #2eb8a8;
+    --accent-hover: #4cc8b9;
+    --accent-tint: #0e2d2a;
+    --accent-tint-line: #1e5c55;
+    --accent-ink: #04201d;
+    --good: #47cd89;
+    --bad: #f97066;
+    --warn-bg: #2b1e07;
+    --warn-line: #5c3d0a;
+    --warn-ink: #fec84b;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-float: 0 12px 24px rgba(0, 0, 0, 0.45);
 
     --c-sales: #3987e5;
     --c-cash: #1c5cab;
@@ -67,21 +105,31 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0f0f0e;
-  --surface: #1a1a19;
-  --surface-2: #242422;
-  --ink: #ffffff;
-  --ink-2: #c3c2b7;
-  --muted: #9a988f;
-  --line: #2c2c2a;
-  --axis: #45443f;
-  --accent: #3987e5;
-  --accent-ink: #ffffff;
-  --good: #2fbf2f;
-  --bad: #ef6b6b;
-  --warn-bg: #2e2510;
-  --warn-line: #5c4a1a;
-  --warn-ink: #f3d58c;
+  --page: #0c111d;
+  --surface: #161b26;
+  --surface-2: #1f242f;
+  --hover: #1a202b;
+  --track: #1f242f;
+  --ink: #f5f5f6;
+  --ink-2: #cecfd2;
+  --muted: #94969c;
+  --faint: #85888e;
+  --line: #2a303b;
+  --line-2: #1f242f;
+  --input-line: #333741;
+  --axis: #333741;
+  --accent: #2eb8a8;
+  --accent-hover: #4cc8b9;
+  --accent-tint: #0e2d2a;
+  --accent-tint-line: #1e5c55;
+  --accent-ink: #04201d;
+  --good: #47cd89;
+  --bad: #f97066;
+  --warn-bg: #2b1e07;
+  --warn-line: #5c3d0a;
+  --warn-ink: #fec84b;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 12px 24px rgba(0, 0, 0, 0.45);
 
   --c-sales: #3987e5;
   --c-cash: #1c5cab;
@@ -100,11 +148,19 @@
   --color-page: var(--page);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-hover: var(--hover);
+  --color-track: var(--track);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-input-line: var(--input-line);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-tint-line: var(--accent-tint-line);
   --color-accent-ink: var(--accent-ink);
   --color-good: var(--good);
   --color-bad: var(--bad);
@@ -121,8 +177,25 @@ body {
   margin: 0;
   background: var(--page);
   color: var(--ink);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .num {
@@ -132,13 +205,19 @@ body {
 /* Form controls share one look */
 .field {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--input-line);
   background: var(--surface);
   color: var(--ink);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 9px 12px;
   font-size: 16px; /* 16px stops iOS zooming on focus */
   outline: none;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+@media (min-width: 47.5rem) {
+  .field {
+    font-size: 14px;
+  }
 }
 .field:focus {
   border-color: var(--accent);
@@ -150,8 +229,10 @@ body {
   cursor: not-allowed;
 }
 .field-lg {
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 600;
   padding: 12px 14px;
+  border-radius: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -160,18 +241,20 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-size: 15px;
+  min-height: 38px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
   font-weight: 600;
-  border: 1px solid var(--line);
+  border: 1px solid var(--input-line);
   background: var(--surface);
-  color: var(--ink);
+  color: var(--ink-2);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
   cursor: pointer;
   white-space: nowrap;
 }
 .btn:hover {
-  background: var(--surface-2);
+  background: var(--hover);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -183,45 +266,81 @@ body {
   color: var(--accent-ink);
 }
 .btn-primary:hover {
-  background: color-mix(in srgb, var(--accent) 88%, black);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .btn-danger {
   color: var(--bad);
 }
 .btn-sm {
-  padding: 6px 10px;
+  min-height: 32px;
+  padding: 5px 10px;
   font-size: 13px;
-  border-radius: 8px;
+  font-weight: 500;
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
 }
 
 .chip {
-  border: 1px solid var(--line);
+  border: 1px solid var(--input-line);
   background: var(--surface);
   color: var(--ink-2);
   border-radius: 999px;
-  padding: 7px 12px;
-  font-size: 14px;
+  padding: 6px 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
 }
+.chip:hover {
+  background: var(--hover);
+}
 .chip[aria-pressed="true"],
 .chip[aria-current="page"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--surface);
+  background: var(--accent-tint);
+  border-color: var(--accent-tint-line);
+  color: var(--accent);
+}
+
+/* Segmented control: a grey track with the chosen option raised in white. */
+.seg {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--track);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.seg > button {
+  flex: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg > button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1);
 }
 
 .label {
   display: block;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink-2);
   margin-bottom: 6px;
 }

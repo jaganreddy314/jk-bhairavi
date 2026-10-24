@@ -22,8 +22,8 @@ export default defineConfig({
         start_url: base,
         scope: base,
         display: 'standalone',
-        background_color: '#f7f7f5',
-        theme_color: '#f7f7f5',
+        background_color: '#f6f7f9',
+        theme_color: '#ffffff',
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
@@ -31,8 +31,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // .mjs covers the pdf.js worker used for invoice imports.
-        globPatterns: ['**/*.{js,mjs,css,html,svg,png}'],
+        // .mjs covers the pdf.js worker used for invoice imports; .woff2 the Geist font.
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
         // Deep links like /orders get index.html, matching the Cloudflare SPA fallback.
         navigateFallback: `${base}index.html`,
         // pdf.js worker and chart bundles can exceed Workbox's 2 MiB default.

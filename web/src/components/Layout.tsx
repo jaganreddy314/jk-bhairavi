@@ -1,115 +1,118 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useBusiness } from '../lib/business'
 
-const icon = (d: string) => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d={d} />
+/** Lucide icons, drawn from their own paths so the app needs no icon library. */
+const Icon = ({ size = 18, stroke = 1.8, children }: { size?: number; stroke?: number; children: ReactNode }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+    {children}
   </svg>
 )
 
-interface NavItem { to: string; label: string; short: string; icon: ReactNode; end?: boolean }
+const GLYPH = {
+  dashboard: <><rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" /><rect width="7" height="9" x="14" y="12" rx="1" /><rect width="7" height="5" x="3" y="16" rx="1" /></>,
+  sales: <><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17.5v-11" /></>,
+  expense: <><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></>,
+  orders: <><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></>,
+  stock: <><rect width="8" height="4" x="8" y="2" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M12 11h4" /><path d="M12 16h4" /><path d="M8 11h.01" /><path d="M8 16h.01" /></>,
+  food: <><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></>,
+  more: <><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" /></>,
+  list: <><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></>,
+  repeat: <><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></>,
+  settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>,
+  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
+  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>,
+  plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
+  chevronsUpDown: <><path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" /></>,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></>,
+}
 
-/** The six that earn a place in the bar on a phone. */
-const NAV: NavItem[] = [
-  { to: '/', label: 'Dashboard', short: 'Home', end: true, icon: icon('M3 13h4v8H3zM10 8h4v13h-4zM17 3h4v18h-4z') },
-  { to: '/sales', label: 'Enter sales', short: 'Sales', icon: icon('M12 3v18M17 7.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.7 5 3.3 5 1.4 5 3.5-2.2 3.2-5 3.2-5-1.3-5-3.2') },
-  { to: '/expenses/new', label: 'Add expense', short: 'Add', end: true, icon: icon('M12 5v14M5 12h14') },
-  { to: '/orders', label: 'Purchase orders', short: 'Orders', icon: icon('M6 2h9l5 5v15H6zM15 2v5h5M9 13h7M9 17h7') },
-  { to: '/stock', label: 'Stock counts', short: 'Stock', icon: icon('M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10') },
-  { to: '/food', label: 'Food', short: 'Food', icon: icon('M5 3v8a3 3 0 0 0 6 0V3M8 11v10M19 3c-1.7 1.4-2.5 3.3-2.5 5.5 0 1.6.6 2.6 1.5 3.1V21') },
+interface NavItem { to: string; label: string; glyph: ReactNode; end?: boolean }
+
+const OVERVIEW: NavItem[] = [
+  { to: '/', label: 'Dashboard', end: true, glyph: GLYPH.dashboard },
+  { to: '/sales', label: 'Enter sales', glyph: GLYPH.sales },
+  { to: '/expenses/new', label: 'Add expense', end: true, glyph: GLYPH.expense },
 ]
 
-/** Reached from the “More” button: needed regularly, but not every day. */
+const INVENTORY: NavItem[] = [
+  { to: '/orders', label: 'Purchase orders', glyph: GLYPH.orders },
+  { to: '/stock', label: 'Stock counts', glyph: GLYPH.stock },
+  { to: '/food', label: 'Food', glyph: GLYPH.food },
+]
+
+/** Needed regularly, but not every day: under “More” on a computer, in the account sheet on a phone. */
 const MORE: NavItem[] = [
-  { to: '/expenses', label: 'Expenses', short: 'Expenses', end: true, icon: icon('M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01') },
-  { to: '/recurring', label: 'Standard expenses', short: 'Standard', icon: icon('M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5') },
-  { to: '/settings', label: 'Settings', short: 'Settings', icon: icon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.8-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.8H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 2.8-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.8 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.8H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1.1z') },
+  { to: '/expenses', label: 'Expenses', end: true, glyph: GLYPH.list },
+  { to: '/recurring', label: 'Standard expenses', glyph: GLYPH.repeat },
+  { to: '/settings', label: 'Settings', glyph: GLYPH.settings },
 ]
 
-const MORE_ICON = icon('M4 6h16M4 12h16M4 18h16')
+/** The phone's bottom bar, either side of the raised + button. */
+const TABS: { to: string; label: string; glyph: ReactNode; end?: boolean }[] = [
+  { to: '/', label: 'Home', end: true, glyph: GLYPH.dashboard },
+  { to: '/orders', label: 'Orders', glyph: GLYPH.orders },
+  { to: '/stock', label: 'Stock', glyph: GLYPH.stock },
+  { to: '/food', label: 'Food', glyph: GLYPH.food },
+]
+
+/** What the + button offers: the three things entered most. */
+const QUICK_ADD = [
+  { to: '/sales', label: 'Enter sales', sub: "Today's totals and cash", glyph: '$', tone: 'bg-accent-tint text-accent' },
+  { to: '/expenses/new', label: 'Add expense', sub: 'Wages, rent, bills and more', glyph: '−', tone: 'bg-[#EEF4FF] text-[#444CE7] dark:bg-[#1F2A5C] dark:text-[#A4BCFD]' },
+  { to: '/orders/new', label: 'New purchase order', sub: 'Order from a supplier', glyph: '+', tone: 'bg-[#FFFAEB] text-[#DC6803] dark:bg-[#2B1E07] dark:text-[#FEC84B]' },
+]
+
+const isOn = (pathname: string, item: { to: string; end?: boolean }) =>
+  item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + '/')
+
+/** "Caltex Kedron" → "CK": the business's tile in the sidebar and top bar. */
+const initials = (name = '') =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '·'
+
+function BusinessTile() {
+  const { business } = useBusiness()
+  return (
+    <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-lg bg-accent text-[13px] font-semibold text-accent-ink">
+      {initials(business?.name)}
+    </span>
+  )
+}
 
 /**
- * The rest of the pages. Closes on a click outside, on Escape, and whenever the route
- * changes — otherwise tapping a link would leave the panel hanging over the new page.
+ * Which business every page is showing. With more than one, an invisible native select
+ * covers the name, so tapping it opens the phone's own picker.
  */
-function MoreMenu({ variant }: { variant: 'bar' | 'tab' }) {
-  const [open, setOpen] = useState(false)
-  const wrap = useRef<HTMLDivElement>(null)
-  const { pathname } = useLocation()
-
-  useEffect(() => setOpen(false), [pathname])
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
-  }, [open])
-
-  const active = MORE.some((m) => (m.end ? pathname === m.to : pathname.startsWith(m.to)))
-
+function BusinessSwitcher({ compact }: { compact?: boolean }) {
+  const { business, businesses, businessId, setBusinessId } = useBusiness()
+  const many = businesses.length > 1
   return (
-    <div ref={wrap} className={variant === 'tab' ? 'relative' : 'relative shrink-0'}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((v) => !v)}
-        className={
-          variant === 'tab'
-            ? `flex w-full flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${active || open ? 'text-accent' : 'text-muted'}`
-            : `whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium lg:px-3 ${active || open ? 'bg-surface-2 text-ink' : 'text-ink-2 hover:text-ink'}`
-        }
-      >
-        {variant === 'tab' ? MORE_ICON : null}
-        More
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className={`absolute z-30 min-w-48 overflow-hidden rounded-xl border border-line bg-surface py-1 shadow-lg ${
-            variant === 'tab' ? 'bottom-full right-0 mb-1' : 'right-0 top-full mt-1'
-          }`}
-        >
-          {MORE.map((m) => (
-            <NavLink
-              key={m.to}
-              to={m.to}
-              end={m.end}
-              role="menuitem"
-              className={({ isActive }) => `flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium ${isActive ? 'bg-surface-2 text-ink' : 'text-ink-2'}`}
-            >
-              {m.icon}
-              {m.label}
-            </NavLink>
-          ))}
-        </div>
+    <div className="relative flex min-w-0 flex-1 items-center gap-2.5">
+      <BusinessTile />
+      <div className="min-w-0 flex-1">
+        <div className={`truncate font-semibold ${compact ? 'text-[15px]' : 'text-sm'}`}>{business?.name}</div>
+        {many && !compact && <div className="text-xs text-muted">Switch store</div>}
+      </div>
+      {many && (
+        <>
+          <span className="text-muted"><Icon size={compact ? 14 : 16} stroke={2}>{compact ? GLYPH.chevronDown : GLYPH.chevronsUpDown}</Icon></span>
+          <select
+            aria-label="Switch store"
+            className="absolute inset-0 cursor-pointer opacity-0"
+            value={businessId}
+            onChange={(e) => setBusinessId(e.target.value)}
+          >
+            {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </>
       )}
     </div>
   )
 }
 
-/** Which business every page is showing. Hidden while there is only one. */
-function BusinessSwitcher() {
-  const { businesses, businessId, setBusinessId } = useBusiness()
-  if (businesses.length < 2)
-    return <span className="hidden max-w-40 truncate text-sm font-semibold text-ink-2 sm:inline">{businesses[0]?.name}</span>
-  return (
-    <select
-      aria-label="Business"
-      className="field !w-auto max-w-40 shrink-0 truncate !py-1.5 !text-sm font-semibold"
-      value={businessId}
-      onChange={(e) => setBusinessId(e.target.value)}
-    >
-      {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-    </select>
-  )
-}
-
-function ThemeToggle() {
+function useTheme() {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? '')
   const isDark = theme ? theme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
   const toggle = () => {
@@ -118,55 +121,173 @@ function ThemeToggle() {
     try { localStorage.setItem('theme', next) } catch { /* private mode */ }
     setTheme(next)
   }
+  return { isDark, toggle }
+}
+
+function ThemeButton({ className }: { className: string }) {
+  const { isDark, toggle } = useTheme()
   return (
-    <button type="button" className="btn btn-sm" onClick={toggle} aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}>
-      {isDark ? '☀︎' : '☾'}
+    <button type="button" onClick={toggle} aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+      className={`grid shrink-0 place-items-center border border-line bg-surface text-ink-2 hover:bg-surface-2 ${className}`}>
+      <Icon size={15} stroke={2}>{isDark ? GLYPH.sun : GLYPH.moon}</Icon>
     </button>
+  )
+}
+
+const Avatar = ({ email, size }: { email?: string; size: number }) => (
+  <span style={{ width: size, height: size }} className="grid shrink-0 place-items-center rounded-full bg-accent-tint text-[13px] font-semibold text-accent">
+    {(email?.[0] ?? '?').toUpperCase()}
+  </span>
+)
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `flex items-center gap-2.5 rounded-lg px-2.5 py-2 font-medium ${isActive ? 'bg-accent-tint text-accent' : 'text-ink-2 hover:bg-surface-2'}`
+
+const GroupLabel = ({ children, first }: { children: ReactNode; first?: boolean }) => (
+  <div className={`px-2.5 pb-1 text-[11px] font-medium uppercase tracking-[0.04em] text-faint ${first ? 'pt-2' : 'pt-3.5'}`}>{children}</div>
+)
+
+function Sidebar({ email }: { email?: string }) {
+  const { pathname } = useLocation()
+  const moreActive = MORE.some((m) => isOn(pathname, m))
+  const [moreOpen, setMoreOpen] = useState(moreActive)
+  useEffect(() => { if (moreActive) setMoreOpen(true) }, [moreActive])
+
+  return (
+    <aside className="sticky top-0 hidden h-dvh flex-col gap-1 overflow-y-auto border-r border-line bg-surface px-3 py-4 desk:flex">
+      <div className="px-2 pb-3.5 pt-1.5">
+        <BusinessSwitcher />
+      </div>
+      <nav aria-label="Main" className="flex flex-col gap-1">
+        <GroupLabel first>Overview</GroupLabel>
+        {OVERVIEW.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
+        <GroupLabel>Inventory</GroupLabel>
+        {INVENTORY.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
+        <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left font-medium text-ink-2 hover:bg-surface-2">
+          <Icon>{GLYPH.more}</Icon>More
+        </button>
+        {moreOpen && MORE.map((n) => (
+          <NavLink key={n.to} to={n.to} end={n.end} className={(s) => `${navClass(s)} pl-9`}>{n.label}</NavLink>
+        ))}
+      </nav>
+      <div className="mt-auto flex items-center gap-2.5 border-t border-line px-1.5 pt-3">
+        <Avatar email={email} size={32} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium">{email}</div>
+          <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => supabase.auth.signOut()}>Sign out</button>
+        </div>
+        <ThemeButton className="h-8 w-8 rounded-lg" />
+      </div>
+    </aside>
+  )
+}
+
+/** A panel that rises from the bottom of a phone screen. Escape or the backdrop closes it. */
+function Sheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+  if (!open) return null
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-[rgba(16,24,40,0.4)]" onClick={onClose} />
+      <div role="dialog" aria-modal="true"
+        className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8px)] z-41 rounded-2xl bg-surface p-2 shadow-[0_-8px_32px_rgba(16,24,40,0.2)]">
+        <div className="mx-auto mb-2 mt-1 h-1 w-9 rounded-sm bg-input-line" />
+        {children}
+        <button type="button" onClick={onClose} className="mt-1 h-12 w-full rounded-xl bg-surface-2 text-[15px] font-semibold text-ink-2">Cancel</button>
+      </div>
+    </>
+  )
+}
+
+const sheetRow = 'flex w-full items-center gap-3.5 rounded-xl p-3 text-left hover:bg-hover'
+
+function PhoneChrome({ email }: { email?: string }) {
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [sheet, setSheet] = useState<'add' | 'account' | null>(null)
+  const close = () => setSheet(null)
+  // Also closes on Back, which changes the page without a tap in the sheet.
+  useEffect(() => setSheet(null), [pathname])
+  const go = (to: string) => { setSheet(null); navigate(to) }
+
+  return (
+    <>
+      <header className="sticky top-0 z-20 flex items-center gap-2.5 border-b border-line bg-surface/95 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+10px)] backdrop-blur-md desk:hidden">
+        <BusinessSwitcher compact />
+        <ThemeButton className="h-9 w-9 rounded-[10px]" />
+        <button type="button" aria-label="Account and more" onClick={() => setSheet('account')} className="rounded-full">
+          <Avatar email={email} size={36} />
+        </button>
+      </header>
+
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-end border-t border-line bg-surface/95 px-1 pb-[calc(env(safe-area-inset-bottom)+6px)] pt-1.5 backdrop-blur-md desk:hidden">
+        {TABS.slice(0, 2).map((t) => <Tab key={t.to} {...t} />)}
+        <div className="flex justify-center">
+          <button type="button" aria-label="Add" onClick={() => setSheet('add')}
+            className="-mt-[22px] grid h-[52px] w-[52px] place-items-center rounded-full border-4 border-page bg-accent text-accent-ink shadow-[0_6px_16px_rgba(15,118,110,0.35)]">
+            <Icon size={24} stroke={2.4}>{GLYPH.plus}</Icon>
+          </button>
+        </div>
+        {TABS.slice(2).map((t) => <Tab key={t.to} {...t} />)}
+      </nav>
+
+      <Sheet open={sheet === 'add'} onClose={close}>
+        {QUICK_ADD.map((a) => (
+          <button key={a.to} type="button" className={sheetRow} onClick={() => go(a.to)}>
+            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[10px] font-semibold ${a.tone}`}>{a.glyph}</span>
+            <span className="flex-1">
+              <span className="block text-[15px] font-semibold">{a.label}</span>
+              <span className="block text-[13px] text-muted">{a.sub}</span>
+            </span>
+          </button>
+        ))}
+      </Sheet>
+
+      <Sheet open={sheet === 'account'} onClose={close}>
+        <div className="flex items-center gap-3 px-3 pb-3 pt-1">
+          <Avatar email={email} size={36} />
+          <span className="min-w-0 truncate text-sm font-medium">{email}</span>
+        </div>
+        {[...OVERVIEW.slice(1), ...MORE].map((m) => (
+          <button key={m.to} type="button" onClick={() => go(m.to)}
+            className={`${sheetRow} font-medium ${isOn(pathname, m) ? 'text-accent' : 'text-ink-2'}`}>
+            <Icon size={20}>{m.glyph}</Icon>
+            <span className="text-[15px]">{m.label}</span>
+          </button>
+        ))}
+        <button type="button" onClick={() => supabase.auth.signOut()} className={`${sheetRow} font-medium text-bad`}>
+          <Icon size={20}>{GLYPH.logOut}</Icon>
+          <span className="text-[15px]">Sign out</span>
+        </button>
+      </Sheet>
+    </>
+  )
+}
+
+function Tab({ to, label, glyph, end }: { to: string; label: string; glyph: ReactNode; end?: boolean }) {
+  return (
+    <NavLink to={to} end={end}
+      className={({ isActive }) => `flex flex-col items-center gap-[3px] py-1.5 text-[11px] font-medium ${isActive ? 'text-accent' : 'text-muted'}`}>
+      <Icon size={22}>{glyph}</Icon>
+      {label}
+    </NavLink>
   )
 }
 
 export function Layout({ email }: { email?: string }) {
   return (
-    <div className="min-h-dvh pb-24 md:pb-10">
-      <header className="sticky top-0 z-20 border-b border-line bg-page/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2.5 lg:gap-3">
-          <NavLink to="/" className="flex shrink-0 items-center font-bold" aria-label="Dashboard">
-            <img src={`${import.meta.env.BASE_URL}favicon.png`} alt="" className="h-7 w-7" />
-          </NavLink>
-          <BusinessSwitcher />
-          {/* One line, always: short labels until there is room for the full ones. */}
-          <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 md:flex lg:gap-1" aria-label="Main">
-            {NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end}
-                className={({ isActive }) => `whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium lg:px-3 ${isActive ? 'bg-surface-2 text-ink' : 'text-ink-2 hover:text-ink'}`}>
-                <span className="xl:hidden">{n.short}</span>
-                <span className="hidden xl:inline">{n.label}</span>
-              </NavLink>
-            ))}
-            <MoreMenu variant="bar" />
-          </nav>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden max-w-48 truncate text-xs text-muted xl:inline">{email}</span>
-            <ThemeToggle />
-            <button type="button" className="btn btn-sm" onClick={() => supabase.auth.signOut()}>Sign out</button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 pt-5">
+    <div className="min-h-dvh desk:grid desk:grid-cols-[232px_minmax(0,1fr)]">
+      <Sidebar email={email} />
+      <PhoneChrome email={email} />
+      <main className="mx-auto w-full min-w-0 max-w-[1280px] px-4 pb-[calc(env(safe-area-inset-bottom)+96px)] pt-4 desk:px-8 desk:pb-10 desk:pt-7">
         <Outlet />
       </main>
-
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-7 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
-        {NAV.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end}
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 py-2 text-center text-[10px] font-medium leading-tight ${isActive ? 'text-accent' : 'text-muted'}`}>
-            {n.icon}
-            {n.short}
-          </NavLink>
-        ))}
-        <MoreMenu variant="tab" />
-      </nav>
     </div>
   )
 }

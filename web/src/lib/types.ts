@@ -297,6 +297,10 @@ export interface StockGroup {
   business_id: string
   name: string
   sort: number
+  /** Alert when a product in this category drops to this many. A product's own wins. */
+  min_stock: number | null
+  /** Days before expiry its products go on clearance. A product's own wins; else a week. */
+  clearance_days: number | null
 }
 
 export interface StockItem {
@@ -312,6 +316,42 @@ export interface StockItem {
   active: boolean
   /** Position in its supplier's list — the order you go through when ordering. */
   supplier_sort: number
+  /** Alert at or below this many; null = its category's. */
+  min_stock: number | null
+  /** Days before expiry to put it on clearance; null = its category's. */
+  clearance_days: number | null
+}
+
+export type BatchStatus = 'active' | 'on_clearance' | 'cleared' | 'written_off'
+/** upcoming: not due yet · due: put it on clearance · on_clearance: marked down · expired: write it off */
+export type BatchState = 'upcoming' | 'due' | 'on_clearance' | 'expired'
+
+/** Some of a product sharing one expiry date, still on the shelf (v_stock_batches). */
+export interface StockBatch {
+  id: string
+  business_id: string
+  item_id: string
+  expires_on: string
+  qty: number | null
+  status: BatchStatus
+  checked_on: string
+  note: string | null
+  clearance_days: number
+  /** The day it's due for clearance. */
+  alert_from: string
+  /** Negative once it has expired. */
+  days_left: number
+  state: BatchState
+}
+
+/** Estimated stock on hand of a product with a minimum (stock_levels). */
+export interface StockLevel {
+  item_id: string
+  min_stock: number
+  /** The last finished count it was in; null if it has never been counted. */
+  counted_on: string | null
+  /** That count, plus received since, less sold since. Null when never counted. */
+  on_hand: number | null
 }
 
 /** A spot counted from on the stock take walk: a shelf side, a fridge door, a store room shelf. */

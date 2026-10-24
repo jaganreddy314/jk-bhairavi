@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
   Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
-  StaffReadiness, StaffSuper, StaffTax,
+  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
   StockBatch, StockLevel,
@@ -171,6 +171,10 @@ const DEPENDENTS: Record<string, string[]> = {
   security_groups: ['security_groups', 'my_access'],
   staff_super: ['staff_super', 'staff_readiness'],
   staff_leave: ['staff_leave'],
+  shifts: ['shifts', 'roster_weeks'],
+  pay_runs: ['pay_runs', 'pay_run'],
+  pay_run_lines: ['pay_run'],
+  staff_availability: ['staff_availability'],
   partners: ['partners'],
   partner_contributions: ['partner_contributions'],
   setup_costs: ['setup_costs'],
@@ -199,7 +203,7 @@ const DEPENDENTS: Record<string, string[]> = {
 // copies business_id from the parent order or count, which is what row-level security checks.
 const SCOPED = new Set(['sales_days', 'expenses', 'recurring_expenses', 'suppliers', 'staff', 'partners',
   'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items',
-  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups'])
+  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups', 'shifts', 'pay_runs'])
 
 function useWrite<V>(tableName: string, fn: (v: V) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
   const qc = useQueryClient()
@@ -798,5 +802,147 @@ export const useSaveStaffLeave = () => {
   return useMutation({
     mutationFn: (rows: Omit<StaffLeave, 'business_id'>[]) => run(supabase.from('staff_leave').upsert(rows.map((r) => ({ ...r, business_id: biz })))),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['staff_leave'] }),
+  })
+}
+
+// ---------- schedule ----------
+
+export const useRosterPeople = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['roster_people', biz],
+    queryFn: async () => money(await run(supabase.rpc('roster_people', { p_business: biz })) as RosterPerson[], ['above_award', 'ordinary_hours', 'fortnight_hour_limit']),
+  })
+}
+
+export const useShifts = (from: string, to: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['shifts', biz, from, to],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('shifts').select('*').eq('business_id', biz)
+        .gte('shift_date', from).lte('shift_date', to).order('shift_date').order('start_minute').order('id').range(a, b))) as Shift[],
+  })
+}
+
+/** Several shifts in one insert — copying last week. */
+export const useAddShifts = () => {
+  const biz = useBusinessId()
+  return useWrite<Omit<Shift, 'id' | 'business_id'>[]>('shifts', (rows) =>
+    supabase.from('shifts').insert(rows.map((r) => ({ ...r, business_id: biz }))))
+}
+
+export const useRosterWeek = (weekStart: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['roster_weeks', biz, weekStart],
+    queryFn: async () => ((await run(supabase.from('roster_weeks').select('*').eq('business_id', biz).eq('week_start', weekStart))) as RosterWeek[])[0] ?? null,
+  })
+}
+
+export const usePublishWeek = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (weekStart: string) => run(supabase.from('roster_weeks').upsert({
+      business_id: biz, week_start: weekStart, published_at: new Date().toISOString(), changed_since_publish: false,
+    })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['roster_weeks'] }),
+  })
+}
+
+export const useAvailability = scopedTable<StaffAvailability>('staff_availability', 'dow')
+
+export const useSaveAvailability = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { staffId: string; rows: Omit<StaffAvailability, 'business_id' | 'staff_id'>[] }) => {
+      await run(supabase.from('staff_availability').delete().eq('staff_id', v.staffId))
+      if (v.rows.length) await run(supabase.from('staff_availability').insert(v.rows.map((r) => ({ ...r, staff_id: v.staffId, business_id: biz }))))
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff_availability'] }),
+  })
+}
+
+export const usePublicHolidays = globalTable<PublicHoliday>('public_holidays', 'holiday_date')
+
+// ---------- pay runs ----------
+
+const PAY_NUMBERS = ['gross', 'tax', 'super', 'net']
+const payMoney = (lines: PayRunLine[] | undefined) => money(lines ?? [], PAY_NUMBERS as never[])
+
+export const usePayRuns = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['pay_runs', biz],
+    queryFn: async () => {
+      const rows = (await run(supabase.from('pay_runs').select('*, pay_run_lines(staff_id, gross, tax, super, net)')
+        .eq('business_id', biz).order('period_start', { ascending: false }))) as PayRun[]
+      return rows.map((r) => ({ ...r, pay_run_lines: payMoney(r.pay_run_lines) }))
+    },
+  })
+}
+
+export const usePayRun = (id: string | undefined) =>
+  useQuery({
+    queryKey: ['pay_run', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const rows = (await run(supabase.from('pay_runs').select('*, pay_run_lines(*)').eq('id', id!))) as PayRun[]
+      const r = rows[0]
+      return r ? { ...r, pay_run_lines: payMoney(r.pay_run_lines) } : null
+    },
+  })
+
+/** Everyone's finalised pay this financial year before a date: year-to-date figures and the WHM bands. */
+export const usePaidThisYear = (fyStart: string, before: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['pay_runs', 'ytd', biz, fyStart, before],
+    queryFn: async () => {
+      const rows = (await run(supabase.from('pay_runs').select('pay_date, pay_run_lines(staff_id, gross, tax, super)')
+        .eq('business_id', biz).eq('status', 'finalised').gte('pay_date', fyStart).lt('pay_date', before))) as PayRun[]
+      const out = new Map<string, { gross: number; tax: number; super: number }>()
+      for (const r of rows) for (const l of payMoney(r.pay_run_lines)) {
+        const t = out.get(l.staff_id) ?? { gross: 0, tax: 0, super: 0 }
+        out.set(l.staff_id, { gross: t.gross + (l.gross ?? 0), tax: t.tax + (l.tax ?? 0), super: t.super + (l.super ?? 0) })
+      }
+      return out
+    },
+  })
+}
+
+export const useSavePayLine = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { pay_run_id: string; staff_id: string; inputs: PayRunLine['inputs'] }) =>
+      run(supabase.from('pay_run_lines').upsert({ ...v, business_id: biz }, { onConflict: 'pay_run_id,staff_id' })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pay_run'] }),
+  })
+}
+
+const AFTER_PAY = ['pay_runs', 'pay_run', 'expenses', 'all-expenses', 'staff_leave', 'earliest'] as const
+
+export const useFinalisePayRun = () =>
+  useRpc<{ id: string; lines: unknown[] }>('finalise_pay_run', AFTER_PAY, (v) => ({ p_id: v.id, p_lines: v.lines }))
+
+export const useReopenPayRun = () => useRpc<string>('reopen_pay_run', AFTER_PAY, (id) => ({ p_id: id }))
+
+export const useStaffTaxProfile = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['staff_tax_profile', biz],
+    queryFn: async () => (await run(supabase.rpc('staff_tax_profile', { p_business: biz }))) as (import('./withholding').TaxProfile & { staff_id: string })[],
+  })
+}
+
+/** Leave balances for everyone in the business, for pay runs. */
+export const useAllLeave = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['staff_leave', 'all', biz],
+    queryFn: async () => money(await run(supabase.from('staff_leave').select('*').eq('business_id', biz)) as StaffLeave[], ['hours']),
   })
 }

@@ -30,6 +30,8 @@ const GLYPH = {
   chevronDown: <path d="m6 9 6 6 6-6" />,
   logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></>,
   bell: <><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></>,
+  calendar: <><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
+  banknote: <><rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></>,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
 }
 
@@ -54,6 +56,8 @@ const INVENTORY: NavItem[] = [
 
 const TEAM: NavItem[] = [
   { to: '/people', label: 'People', glyph: GLYPH.people, perms: ['people', 'payroll', 'admin'] },
+  { to: '/schedule', label: 'Schedule', glyph: GLYPH.calendar, perms: ['roster'] },
+  { to: '/pay-runs', label: 'Pay runs', glyph: GLYPH.banknote, perms: ['payroll'] },
 ]
 
 /** Needed regularly, but not every day: under “Manage” on a computer, in the account sheet on a phone. */
@@ -173,7 +177,7 @@ const GroupLabel = ({ children, first }: { children: ReactNode; first?: boolean 
 function Sidebar({ email }: { email?: string }) {
   const allowed = useAllowed()
   return (
-    <aside className="sticky top-0 hidden h-dvh flex-col gap-1 overflow-y-auto border-r border-line bg-surface px-3 py-4 desk:flex">
+    <aside className="sticky top-0 hidden h-dvh flex-col gap-1 overflow-y-auto border-r border-line bg-surface px-3 py-4 desk:flex print:!hidden">
       <div className="px-2 pb-3.5 pt-1.5">
         <BusinessSwitcher />
       </div>
@@ -240,7 +244,7 @@ function PhoneChrome({ email }: { email?: string }) {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex items-center gap-2.5 border-b border-line bg-surface/95 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+10px)] backdrop-blur-md desk:hidden">
+      <header className="sticky top-0 z-20 flex items-center gap-2.5 print:!hidden border-b border-line bg-surface/95 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+10px)] backdrop-blur-md desk:hidden">
         <BusinessSwitcher compact />
         <ThemeButton className="h-9 w-9 rounded-[10px]" />
         <button type="button" aria-label="Account and more" onClick={() => setSheet('account')} className="rounded-full">
@@ -249,7 +253,7 @@ function PhoneChrome({ email }: { email?: string }) {
       </header>
 
       <nav aria-label="Main" style={{ gridTemplateColumns: `repeat(${tabs.length + (quick.length ? 1 : 0)}, minmax(0, 1fr))` }}
-        className="fixed inset-x-0 bottom-0 z-30 grid items-end border-t border-line bg-surface/95 px-1 pb-[calc(env(safe-area-inset-bottom)+6px)] pt-1.5 backdrop-blur-md desk:hidden">
+        className="fixed inset-x-0 bottom-0 z-30 grid items-end print:!hidden border-t border-line bg-surface/95 px-1 pb-[calc(env(safe-area-inset-bottom)+6px)] pt-1.5 backdrop-blur-md desk:hidden">
         {tabs.slice(0, half).map((t) => <Tab key={t.to} {...t} />)}
         {quick.length > 0 && <div className="flex justify-center">
           <button type="button" aria-label="Add" onClick={() => setSheet('add')}
@@ -309,7 +313,7 @@ function Tab({ to, label, glyph, end }: { to: string; label: string; glyph: Reac
 
 export function Layout({ email }: { email?: string }) {
   return (
-    <div className="min-h-dvh desk:grid desk:grid-cols-[232px_minmax(0,1fr)]">
+    <div className="min-h-dvh desk:grid desk:grid-cols-[232px_minmax(0,1fr)] print:block">
       <Sidebar email={email} />
       <PhoneChrome email={email} />
       <main className="mx-auto w-full min-w-0 max-w-[1280px] px-4 pb-[calc(env(safe-area-inset-bottom)+96px)] pt-4 desk:px-8 desk:pb-10 desk:pt-7">

@@ -26,6 +26,8 @@ export const PAGES: { to: string; perms: Perm[] }[] = [
   { to: '/stock', perms: ['stock'] },
   { to: '/alerts', perms: ALERT_PERMS },
   { to: '/food/catalogue', perms: ['catalogue'] },
+  { to: '/schedule', perms: ['roster'] },
+  { to: '/pay-runs', perms: ['payroll'] },
   { to: '/people', perms: ['people', 'payroll'] },
   { to: '/settings', perms: ['admin'] },
 ]

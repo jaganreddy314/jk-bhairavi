@@ -48,6 +48,8 @@ export interface PayRates {
   rows: { label: string; rate: number; note: string }[]
   rule: AwardRuleSet
   adult: number
+  /** The multipliers in use: casual or full-time/part-time. */
+  m: DayMultipliers
 }
 
 const pctLabel = (m: number) => `${(m * 100).toFixed(m * 100 % 1 ? 2 : 0).replace(/0+$/, '').replace(/\.$/, '')}%`
@@ -75,7 +77,7 @@ export function payRates(p: Pick<Staff, 'employment_type' | 'date_of_birth' | 'a
     { label: 'Public holiday', rate: at(m.ph), note: pctLabel(m.ph) },
   ]
   return {
-    base, weekday: at(m.weekday), rows, rule, adult: rate.hourly,
+    base, weekday: at(m.weekday), rows, rule, adult: rate.hourly, m,
     junior: band && jpct < 1 ? { band: BAND_LABEL[band], pct: jpct } : null,
   }
 }
@@ -116,7 +118,86 @@ export const PERMS: { key: Perm; label: string; sub: string }[] = [
   { key: 'stock', label: 'Stock counts', sub: 'Count what’s on the shelves' },
   { key: 'catalogue', label: 'Catalogue', sub: 'Products, suppliers and the store layout' },
   { key: 'people', label: 'People', sub: 'The team and their employment details' },
+  { key: 'roster', label: 'Schedule', sub: 'The weekly roster and shift costs' },
   { key: 'payroll', label: 'Payroll', sub: 'Pay rates, awards and payroll setup; editing people' },
   { key: 'sensitive', label: 'Tax, bank and super', sub: 'Tax file numbers, bank accounts and super funds' },
   { key: 'admin', label: 'Settings and access', sub: 'Business settings, who can sign in and security groups' },
 ]
+
+// ---------- shift costs ----------
+
+export const DOW_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+/** 1 = Monday … 7 = Sunday */
+export const isoDow = (date: string) => ((toDate(date).getUTCDay() + 6) % 7) + 1
+
+export interface ShiftPart {
+  label: string
+  hours: number
+  rate: number
+  /** Weekday hours are ordinary; weekend, holiday and late-night time is a penalty rate. */
+  kind: 'ordinary' | 'penalty'
+}
+
+export interface ShiftCost {
+  paidHours: number
+  cost: number
+  /** The shift cut up by rate: what a payslip lists. */
+  parts: ShiftPart[]
+  /** The rate most of the shift is paid at, for the editor's summary line. */
+  mainRate: number
+  mainLabel: string
+  holiday: string | null
+}
+
+/**
+ * What a shift costs at award rates. The shift is cut wherever the rate changes — Saturday
+ * noon where afternoons pay more, the start of a part-day public holiday, the Restaurant
+ * award's late-night loadings — and the unpaid break comes off every piece in proportion.
+ */
+export function shiftCost(rates: PayRates, date: string, start: number, end: number, breakMin: number, holiday: { name: string; from_minute: number } | null): ShiftCost {
+  const dow = isoDow(date)
+  const m = rates.m
+  const cuts = new Set([start, end])
+  if (dow === 6 && m.sat_pm != null && m.sat_pm !== m.sat) cuts.add(720)
+  if (holiday?.from_minute) cuts.add(holiday.from_minute)
+  const late = dow <= 5 ? rates.rule.extras : {}
+  if (late.late_night) cuts.add(1320)
+  if (late.early_morning) cuts.add(360)
+  const points = [...cuts].filter((x) => x >= start && x <= end).sort((a, b) => a - b)
+  const paidShare = (end - start - breakMin) / (end - start)
+  let cost = 0
+  const byRate = new Map<number, number>()
+  const parts: ShiftPart[] = []
+  const casualWord = rates.m.weekday > 1 ? ' (casual)' : ''
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1]
+    const mins = (b - a) * paidShare
+    const isPh = !!holiday && a >= holiday.from_minute
+    const pm = dow === 6 && a >= 720 && m.sat_pm != null && m.sat_pm !== m.sat
+    const mult = isPh ? m.ph : dow === 7 ? m.sun : dow === 6 ? (pm ? m.sat_pm! : m.sat) : m.weekday
+    const label = isPh ? 'Public holiday' : dow === 7 ? 'Sunday' : dow === 6 ? (pm ? 'Saturday after noon' : m.sat_pm != null && m.sat_pm !== m.sat ? 'Saturday before noon' : 'Saturday') : `Ordinary hours${casualWord}`
+    const kind = !isPh && dow <= 5 ? 'ordinary' : 'penalty'
+    const hourly = cent(rates.base * mult)
+    parts.push({ label, hours: mins / 60, rate: hourly, kind })
+    let extra = 0
+    if (late.late_night && a >= 1320) { extra = late.late_night.per_hour; parts.push({ label: 'Late night loading', hours: mins / 60, rate: extra, kind: 'penalty' }) }
+    if (late.early_morning && b <= 360) { extra = late.early_morning.per_hour; parts.push({ label: 'Early morning loading', hours: mins / 60, rate: extra, kind: 'penalty' }) }
+    cost += (mins / 60) * (hourly + extra)
+    byRate.set(hourly + extra, (byRate.get(hourly + extra) ?? 0) + mins)
+  }
+  const main = [...byRate.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? rates.weekday
+  const casual = rates.m.weekday > 1
+  const mainLabel = holiday && start >= holiday.from_minute ? 'public holiday' : dow === 7 ? 'Sunday' : dow === 6 ? 'Saturday' : casual ? 'casual weekday' : 'weekday'
+  return { paidHours: (end - start - breakMin) / 60, cost: cent(cost), parts, mainRate: main, mainLabel, holiday: holiday?.name ?? null }
+}
+
+/** 6am, 2:30pm, midnight. */
+export function fmtTime(min: number) {
+  const h = Math.floor(min / 60) % 24, mm = min % 60
+  const ap = h < 12 ? 'am' : 'pm'
+  if (min === 1440) return 'midnight'
+  return `${((h + 11) % 12) + 1}${mm ? ':' + String(mm).padStart(2, '0') : ''}${ap}`
+}
+
+export const fmtHours = (h: number) => `${(Math.round(h * 10) / 10).toString()}h`

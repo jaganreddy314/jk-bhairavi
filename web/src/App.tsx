@@ -22,6 +22,8 @@ import People from './pages/People'
 import Account from './pages/Account'
 import Person from './pages/Person'
 import { ALERT_PERMS, Home, Need } from './lib/access'
+import Schedule from './pages/Schedule'
+import PayRuns, { PayRunPage, Payslips } from './pages/PayRuns'
 
 // Charts are the heaviest code; load them only when a page that draws them opens.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -71,6 +73,10 @@ export default function App() {
                   <Route path="food-cost" element={<Navigate to="/food" replace />} />
                   <Route path="people" element={<Need perms={['people', 'payroll', 'admin']}><People /></Need>} />
                   <Route path="people/:id" element={<Need perms={['people', 'payroll']}><Person /></Need>} />
+                  <Route path="schedule" element={<Need perms={['roster']}><Schedule /></Need>} />
+                  <Route path="pay-runs" element={<Need perms={['payroll']}><PayRuns /></Need>} />
+                  <Route path="pay-runs/:id" element={<Need perms={['payroll']}><PayRunPage /></Need>} />
+                  <Route path="pay-runs/:id/payslips" element={<Need perms={['payroll']}><Payslips /></Need>} />
                   <Route path="settings" element={<Need perms={['admin']}><Settings /></Need>} />
                   <Route path="account" element={<Account email={session.user.email} />} />
                   <Route path="*" element={<Navigate to="/" replace />} />

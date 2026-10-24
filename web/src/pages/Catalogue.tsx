@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   useBulkUpdate, useItemCosts, usePlaceItems, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
-  useStockItems, useStockLocations, useSuppliers,
+  useStockBatches, useStockItems, useStockLocations, useSuppliers,
 } from '../lib/api'
 import { walkOrder } from '../lib/layout'
 import StoreLayout from './StoreLayout'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
-import { fmtShort } from '../lib/dates'
+import { fmtDay, fmtShort } from '../lib/dates'
+import { qtyStr } from '../lib/purchasing'
 import { aud, parseMoney } from '../lib/format'
 import type { ItemSupplier, StockGroup, StockItem, Supplier } from '../lib/types'
 import { bySection, FoodHeader, linksFor, NO_SECTION, supplierOrder, type SupplierLinks } from '../components/catalogue'
@@ -270,6 +271,11 @@ function ProductDrawer({ item, defaults, groups, suppliers, links, onClose }: {
   const [group, setGroup] = useState(item ? item.group_id ?? '' : defaults.group_id ?? '')
   const [supplier, setSupplier] = useState(item ? item.supplier_id ?? '' : defaults.supplier_id ?? '')
   const [active, setActive] = useState(item?.active ?? true)
+  const [minStock, setMinStock] = useState(item?.min_stock != null ? qtyStr(item.min_stock) : '')
+  const [clearance, setClearance] = useState(item?.clearance_days != null ? String(item.clearance_days) : '')
+  const batches = useStockBatches()
+  const dates = (batches.data ?? []).filter((b) => b.item_id === item?.id)
+  const category = groups.find((g) => g.id === group)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -285,6 +291,8 @@ function ProductDrawer({ item, defaults, groups, suppliers, links, onClose }: {
       unit_cost: price.trim() === '' ? null : parseMoney(price),
       group_id: group || null,
       supplier_id: supplier || null,
+      min_stock: minStock.trim() === '' ? null : parseMoney(minStock),
+      clearance_days: clearance.trim() === '' ? null : Math.round(parseMoney(clearance)),
     })
     onClose()
   }
@@ -333,6 +341,42 @@ function ProductDrawer({ item, defaults, groups, suppliers, links, onClose }: {
             <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={active} onChange={(e) => setActive(e.target.checked)} />
             Show in orders and stock counts
           </label>
+          <div>
+            <div className="mb-2 text-[13px] font-medium text-ink-2">Alerts</div>
+            <div className="grid grid-cols-2 gap-3">
+              {field('Min stock', (
+                <input className="field num" inputMode="decimal" value={minStock} onChange={(e) => setMinStock(e.target.value)}
+                  placeholder={category?.min_stock != null ? `${qtyStr(category.min_stock)} (category)` : 'No alert'} />
+              ))}
+              {field('Clearance days', (
+                <input className="field num" inputMode="numeric" value={clearance} onChange={(e) => setClearance(e.target.value)}
+                  placeholder={`${category?.clearance_days ?? 7} (${category?.clearance_days != null ? 'category' : 'default'})`} />
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-muted">
+              Alert when stock drops to the minimum ({unit}), and this many days before a logged expiry date. Empty uses the category's.
+            </p>
+          </div>
+          {item && (
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-ink-2">
+                <span className="flex-1">Expiry dates</span>
+                <Link to={`/alerts?tab=dates&log=${item.id}`} className="text-[13px] font-medium text-accent">+ Log dates</Link>
+              </div>
+              {dates.length === 0 ? (
+                <p className="text-sm text-muted">None logged.</p>
+              ) : (
+                <ul className="num space-y-0.5 text-sm text-ink-2">
+                  {dates.map((b) => (
+                    <li key={b.id} className={b.state === 'expired' ? 'text-bad' : b.state === 'upcoming' ? '' : 'font-medium text-warn-ink'}>
+                      {b.qty != null ? `${qtyStr(b.qty)} × ` : ''}{fmtDay(b.expires_on)}
+                      <span className="text-muted"> · {b.state === 'expired' ? 'expired' : b.state === 'on_clearance' ? 'on clearance' : b.state === 'due' ? 'put on clearance' : `clearance from ${fmtShort(b.alert_from)}`}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           {item && (
             <div>
               <div className="mb-2 text-[13px] font-medium text-ink-2">Suppliers and prices</div>
@@ -351,7 +395,7 @@ function ProductDrawer({ item, defaults, groups, suppliers, links, onClose }: {
 
 const KEEP = ''
 const NONE = '__none'
-type BulkAction = 'price' | 'supplier' | 'category' | 'place' | 'active'
+type BulkAction = 'price' | 'min' | 'supplier' | 'category' | 'place' | 'active'
 
 /** Change every ticked product in one go: a dark bar at the bottom, one change at a time. */
 function BulkBar({
@@ -367,6 +411,7 @@ function BulkBar({
     if (action === 'place') await placeItems.mutateAsync({ locationId: value === NONE ? null : value, itemIds: ids, only: true })
     else {
       const patch = action === 'price' ? { unit_cost: value.trim() === '' ? null : parseMoney(value) }
+        : action === 'min' ? { min_stock: value.trim() === '' ? null : parseMoney(value) }
         : action === 'supplier' ? { supplier_id: value === NONE ? null : value }
         : action === 'category' ? { group_id: value === NONE ? null : value }
         : { active: value === 'show' }
@@ -389,7 +434,7 @@ function BulkBar({
       {label}
     </button>
   )
-  const ready = action === 'price' || value !== KEEP
+  const ready = action === 'price' || action === 'min' || value !== KEEP
 
   return (
     <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+76px)] z-20 mt-3 rounded-xl bg-[#101828] p-3 text-white shadow-[var(--shadow-float)] desk:bottom-4 dark:bg-[#2A303B]">
@@ -397,6 +442,7 @@ function BulkBar({
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-[100px] flex-1 font-semibold">{ids.length} selected</span>
         {btn('price', 'Change price')}
+        {btn('min', 'Min stock')}
         {btn('supplier', 'Set supplier')}
         {btn('category', 'Move category')}
         {locations.length > 0 && btn('place', 'Counted at')}
@@ -409,12 +455,16 @@ function BulkBar({
       {action && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#344054] pt-3 text-[13px]">
           <span className="text-[#D0D5DD]">
-            {action === 'price' ? 'New price for each' : action === 'supplier' ? 'Usually ordered from' : action === 'category' ? 'Move to'
+            {action === 'price' ? 'New price for each' : action === 'min' ? 'Alert at or below (empty: the category’s)' : action === 'supplier' ? 'Usually ordered from' : action === 'category' ? 'Move to'
               : action === 'place' ? 'Counted only at' : 'Show in orders and counts'}
           </span>
           {action === 'price' && (
             <input inputMode="decimal" placeholder="0.00" aria-label="New price" value={value} onChange={(e) => setValue(e.target.value)}
               className="field num !h-9 !w-28 !border-[#344054] !bg-[#1D2939] !py-0 !text-[13px] !text-white" />
+          )}
+          {action === 'min' && (
+            <input inputMode="decimal" placeholder="—" aria-label="Min stock" value={value} onChange={(e) => setValue(e.target.value)}
+              className="field num !h-9 !w-20 !border-[#344054] !bg-[#1D2939] !py-0 !text-[13px] !text-white" />
           )}
           {action === 'supplier' && choose(suppliers, 'No supplier')}
           {action === 'category' && choose(groups, 'No category')}
@@ -703,12 +753,14 @@ function Sections() {
   if (groups.isLoading) return <Loading />
   return (
     <ListCard title="Categories"
-      sub="Products are grouped by these, and the count sheet follows this order where a product isn't on a shelf yet. Lowest number first.">
+      sub="Products are grouped by these, and the count sheet follows this order where a product isn't on a shelf yet. Lowest number first. Min stock and clearance days apply to every product in the category that doesn't set its own.">
       <TableEditor table="stock_groups" rows={groups.data ?? []} addLabel="Add category"
         defaults={{ sort: ((groups.data ?? []).reduce((m, g) => Math.max(m, g.sort), 0) + 10) }}
         fields={[
           { key: 'name', label: 'Category', type: 'text', required: true },
           { key: 'sort', label: 'Order', type: 'number', width: 'md:w-20 md:text-right' },
+          { key: 'min_stock', label: 'Min stock', type: 'number', width: 'md:w-24 md:text-right' },
+          { key: 'clearance_days', label: 'Clearance days', type: 'number', width: 'md:w-28 md:text-right' },
         ]} />
     </ListCard>
   )

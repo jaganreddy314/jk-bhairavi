@@ -15,14 +15,15 @@ import Orders from './pages/Orders'
 import OrderForm from './pages/OrderForm'
 import StockCounts from './pages/StockCounts'
 import StockCountSheet from './pages/StockCountSheet'
+import StockAlerts from './pages/StockAlerts'
 import Catalogue from './pages/Catalogue'
 import ItemSalesEntry from './pages/ItemSalesEntry'
 import People from './pages/People'
 import Account from './pages/Account'
 import Person from './pages/Person'
+import { ALERT_PERMS, Home, Need } from './lib/access'
 import Schedule from './pages/Schedule'
 import PayRuns, { PayRunPage, Payslips } from './pages/PayRuns'
-import { Home, Need } from './lib/access'
 
 // Charts are the heaviest code; load them only when a page that draws them opens.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -64,6 +65,7 @@ export default function App() {
                   <Route path="orders/:id" element={<Need perms={['purchasing']}><OrderForm /></Need>} />
                   <Route path="stock" element={<Need perms={['stock']}><StockCounts /></Need>} />
                   <Route path="stock/:id" element={<Need perms={['stock']}><StockCountSheet /></Need>} />
+                  <Route path="alerts" element={<Need perms={ALERT_PERMS}><StockAlerts /></Need>} />
                   <Route path="food" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><FoodCost /></Suspense></Need>} />
                   <Route path="food/catalogue" element={<Need perms={['catalogue']}><Catalogue /></Need>} />
                   <Route path="food/sales" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><ItemSales /></Suspense></Need>} />

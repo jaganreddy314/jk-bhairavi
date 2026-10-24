@@ -14,6 +14,8 @@ import { pickWeek, usePeriodRange, type Period } from '../lib/period'
 import { PeriodControls } from '../components/PeriodControls'
 import { axisProps, ChartCard, Legend, TipBox, usePalette, WeekBars, WeekLine } from '../components/charts'
 import { CatDot, ErrorBox, Loading } from '../components/ui'
+import { AlertsBanner } from '../components/alerts'
+import { usePerms, ALERT_PERMS } from '../lib/access'
 
 // Recharts hands tooltip payloads over untyped; this pulls our row back out.
 type TipProps = { active?: boolean; payload?: readonly { payload?: unknown }[] }
@@ -26,6 +28,7 @@ export default function Dashboard() {
   const { period, all, inPeriod, shown, shownFrom, lastDay, from, to } = usePeriodRange(earliest.data ?? null)
   const sales = useSales(shownFrom, lastDay)
   const expenses = useAllExpenses(shownFrom, lastDay)
+  const { can } = usePerms()
 
   return (
     <div>
@@ -37,6 +40,7 @@ export default function Dashboard() {
         <PeriodControls period={period} weeks={all} />
       </div>
       <div className="mt-5">
+        {can(...ALERT_PERMS) && <AlertsBanner />}
         <ErrorBox error={sales.error || expenses.error} />
         {earliest.isLoading || sales.isLoading || expenses.isLoading ? (
           <Loading />

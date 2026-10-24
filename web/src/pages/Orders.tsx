@@ -5,7 +5,7 @@ import { addDays, fmtShort, toDate, todayStr, weekStart } from '../lib/dates'
 import { aud, cents } from '../lib/format'
 import { PO_STATUS, PO_STATUS_LABEL, PO_STATUS_TONE } from '../lib/purchasing'
 import type { PoStatus, PurchaseOrderTotal } from '../lib/types'
-import { Empty, ErrorBox, Loading, PageHeader, Pill, Segmented } from '../components/ui'
+import { Empty, ErrorBox, Kpi, KPI_GRID, Loading, PageHeader, Pill, Segmented } from '../components/ui'
 
 export function StatusPill({ status, children }: { status: PoStatus; children?: ReactNode }) {
   return <Pill tone={PO_STATUS_TONE[status]}>{PO_STATUS_LABEL[status]}{children}</Pill>
@@ -114,7 +114,7 @@ export default function Orders() {
         </Empty>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 desk:grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
+          <div className={KPI_GRID}>
             <Kpi label="Received this week" value={aud(receivedFrom(thisWeek))} note={`Last week ${aud(receivedFrom(addDays(thisWeek, -7), addDays(thisWeek, -1)))}`} />
             <Kpi label="Last 4 weeks" value={aud(last4)} note={`avg ${aud(cents(last4 / 4))} / week`} />
             <Kpi label="Awaiting delivery" value={aud(sum(sent))} note={`${sent.length} sent order${sent.length === 1 ? '' : 's'}`} />
@@ -163,16 +163,6 @@ export default function Orders() {
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-function Kpi({ label, value, note }: { label: string; value: string; note: string }) {
-  return (
-    <div className="card min-w-0 p-3 desk:p-4">
-      <div className="text-[13px] font-medium text-muted">{label}</div>
-      <div className="num mt-1.5 text-xl font-semibold tracking-[-0.02em] desk:text-[26px] desk:leading-8">{value}</div>
-      <div className="mt-1 truncate text-xs text-muted">{note}</div>
     </div>
   )
 }

@@ -5,15 +5,26 @@ import { lineTotal, orderTotal } from '../lib/purchasing'
 import type { ItemCost, ItemSupplier, StockGroup, StockItem, Supplier } from '../lib/types'
 import { Segmented } from './ui'
 
-/** The heading and tabs shared by the two Food pages. */
-export function FoodTabs() {
+/**
+ * The heading and tabs shared by the Food pages: "Food", a line about the tab you're on,
+ * the tab's main action, and underlined tabs.
+ */
+export function FoodHeader({ sub, action }: { sub: string; action?: ReactNode }) {
+  const tab = ({ isActive }: { isActive: boolean }) =>
+    `-mb-px shrink-0 border-b-2 px-1 pb-2.5 pt-1 text-sm font-medium ${isActive ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink-2'}`
   return (
     <div className="mb-4">
-      <h1 className="mb-2 text-2xl font-bold tracking-tight">Food</h1>
-      <nav aria-label="Food" className="flex gap-1.5">
-        <NavLink to="/food" end className="chip">Food cost</NavLink>
-        <NavLink to="/food/sales" className="chip">Item sales</NavLink>
-        <NavLink to="/food/catalogue" className="chip">Catalogue</NavLink>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">Food</h1>
+          <p className="mt-1 text-sm text-muted">{sub}</p>
+        </div>
+        {action}
+      </div>
+      <nav aria-label="Food" className="mt-4 flex gap-6 overflow-x-auto border-b border-line [scrollbar-width:none]">
+        <NavLink to="/food" end className={tab}>Food cost</NavLink>
+        <NavLink to="/food/sales" end className={tab}>Item sales</NavLink>
+        <NavLink to="/food/catalogue" className={tab}>Catalogue</NavLink>
       </nav>
     </div>
   )

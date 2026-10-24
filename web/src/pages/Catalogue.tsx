@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   useBulkUpdate, useItemCosts, usePlaceItems, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
@@ -8,11 +8,11 @@ import { walkOrder } from '../lib/layout'
 import StoreLayout from './StoreLayout'
 import { CAT_LABEL, ENTRY_CATEGORIES } from '../lib/categories'
 import { fmtShort } from '../lib/dates'
-import { aud } from '../lib/format'
+import { aud, parseMoney } from '../lib/format'
 import type { ItemSupplier, StockGroup, StockItem, Supplier } from '../lib/types'
-import { bySection, CategoryChips, FoodTabs, linksFor, NO_SECTION, supplierOrder, type SupplierLinks } from '../components/catalogue'
-import { RowForm, TableEditor, type Field } from '../components/TableEditor'
-import { DeleteButton, ErrorBox, Loading, Segmented } from '../components/ui'
+import { bySection, FoodHeader, linksFor, NO_SECTION, supplierOrder, type SupplierLinks } from '../components/catalogue'
+import { TableEditor } from '../components/TableEditor'
+import { DeleteButton, ErrorBox, Loading, MoneyInput, SaveBar, SearchBox, Segmented } from '../components/ui'
 
 const CATEGORY_OPTIONS = ENTRY_CATEGORIES.map((c) => ({ value: c, label: CAT_LABEL[c] }))
 
@@ -34,15 +34,31 @@ const UNIT_OPTIONS = [
 
 type Tab = 'products' | 'order' | 'layout' | 'suppliers' | 'sections'
 
+const TAB_SUB: Record<Tab, string> = {
+  products: 'Your products, suppliers and how the store is laid out.',
+  order: 'The order you go through each supplier’s products when ordering.',
+  layout: 'Where everything lives, in the order you walk the store.',
+  suppliers: 'Who you buy from.',
+  sections: 'How products are grouped.',
+}
+
 /** What the shop buys and counts: products, who supplies them, and where they live. */
 export default function Catalogue() {
   const [params, setParams] = useSearchParams()
   const raw = params.get('tab')
   const tab: Tab = raw === 'suppliers' || raw === 'sections' || raw === 'order' || raw === 'layout' ? raw : 'products'
+  // The drawer for adding a product opens from the header, so its state lives up here.
+  const [editing, setEditing] = useState<StockItem | 'new' | null>(null)
 
   return (
     <div>
-      <FoodTabs />
+      <FoodHeader sub={TAB_SUB[tab]}
+        action={tab === 'products' && (
+          <button type="button" className="btn btn-primary" onClick={() => setEditing('new')}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M5 12h14M12 5v14" /></svg>
+            Add product
+          </button>
+        )} />
       <div className="mb-4">
         <Segmented
           ariaLabel="Catalogue"
@@ -57,7 +73,7 @@ export default function Catalogue() {
           ]}
         />
       </div>
-      {tab === 'products' && <Products />}
+      {tab === 'products' && <Products editing={editing} setEditing={setEditing} />}
       {tab === 'order' && <SupplierOrder />}
       {tab === 'layout' && <StoreLayout />}
       {tab === 'suppliers' && <Suppliers />}
@@ -66,20 +82,21 @@ export default function Catalogue() {
   )
 }
 
-function Products() {
+/** Products shown per category before "Show all", when every category is listed. */
+const PER_GROUP = 25
+const NO_SUPPLIER = '__none'
+
+function Products({ editing, setEditing }: { editing: StockItem | 'new' | null; setEditing: (e: StockItem | 'new' | null) => void }) {
   const items = useStockItems()
   const groups = useStockGroups()
   const suppliers = useSuppliers()
   const costs = useItemCosts()
   const itemSuppliers = useItemSuppliers()
   const locations = useStockLocations()
-  const save = useSave('stock_items')
   const [cat, setCat] = useState('all')
-  const [open, setOpen] = useState<string | null>(null)
   const [supplierId, setSupplierId] = useState('')
   const [q, setQ] = useState('')
   const [showHidden, setShowHidden] = useState(false)
-  const [editing, setEditing] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   if (items.isLoading || groups.isLoading || suppliers.isLoading) return <Loading />
@@ -91,79 +108,130 @@ function Products() {
   const needle = q.trim().toLowerCase()
   const linksByItem = new Map<string, ItemSupplier[]>()
   for (const l of itemSuppliers.data ?? []) linksByItem.set(l.item_id, [...(linksByItem.get(l.item_id) ?? []), l])
-  const pool = all.filter(
-    (i) => (showHidden || i.active) && (!supplierId || i.supplier_id === supplierId || (linksByItem.get(i.id) ?? []).some((l) => l.supplier_id === supplierId)) && (!needle || i.name.toLowerCase().includes(needle)),
-  )
+  const fromSupplier = (i: StockItem) =>
+    !supplierId ? true
+      : supplierId === NO_SUPPLIER ? !i.supplier_id && !(linksByItem.get(i.id) ?? []).length
+      : i.supplier_id === supplierId || (linksByItem.get(i.id) ?? []).some((l) => l.supplier_id === supplierId)
+  const pool = all.filter((i) => (showHidden || i.active) && fromSupplier(i) && (!needle || i.name.toLowerCase().includes(needle)))
   const sections = bySection(pool, groupList)
   const current = sections.some((s) => s.key === cat) ? cat : 'all'
   const shown = current === 'all' ? sections : sections.filter((s) => s.key === current)
+  // Long categories are cut short while everything is listed; a search or one category shows it all.
+  const capped = current === 'all' && !needle
+  const rowsOf = (items: StockItem[]) => (capped ? items.slice(0, PER_GROUP) : items)
   // Only what is on screen counts as selected, so a filter change can't edit something out of sight.
-  const visible = shown.flatMap((s) => s.items)
+  const visible = shown.flatMap((s) => rowsOf(s.items))
   const chosen = visible.filter((i) => selected.has(i.id)).map((i) => i.id)
   const toggle = (ids: string[], on: boolean) => {
     const next = new Set(selected)
     for (const id of ids) if (on) next.add(id); else next.delete(id)
     setSelected(next)
   }
-
-  const fields: Field[] = [
-    { key: 'name', label: 'Product', type: 'text', required: true },
-    { key: 'group_id', label: 'Category', type: 'select', options: groupList.map((g) => ({ value: g.id, label: g.name })) },
-    { key: 'unit', label: 'Unit', type: 'select', required: true, options: UNIT_OPTIONS },
-    { key: 'supplier_id', label: 'Usually from', type: 'select', options: supplierList.filter((s) => s.active).map((s) => ({ value: s.id, label: s.name })) },
-    { key: 'unit_cost', label: 'Cost per unit', type: 'money' },
-    { key: 'active', label: 'Active', type: 'bool' },
-  ]
   const supplierName = (id: string | null) => supplierList.find((s) => s.id === id)?.name
   const lastPaid = (i: StockItem) => costs.data?.find((c) => c.item_id === i.id)?.unit_cost
+  const box = 'h-4 w-4 accent-[var(--accent)]'
 
   return (
-    <section className="card p-4">
-      <ErrorBox error={items.error || save.error} />
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input type="search" aria-label="Search products" className="field !w-auto min-w-40 flex-1 !py-2" placeholder="Search products…"
-          value={q} onChange={(e) => setQ(e.target.value)} />
-        <select aria-label="Supplier" className="field !w-auto !py-2" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-          <option value="">All suppliers</option>
-          {supplierList.filter((s) => s.active).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <button type="button" className="btn btn-primary btn-sm !py-2" onClick={() => setEditing('new')}>+ Add product</button>
-      </div>
-
-      <CategoryChips
-        sections={sections.map((s) => ({ key: s.key, label: s.label, count: s.items.length }))}
-        value={current}
-        onChange={setCat}
-        total={pool.length}
-      />
-
-      {editing === 'new' && (
-        <div className="mt-3 rounded-xl bg-surface-2 p-3">
-          <RowForm
-            fields={fields}
-            busy={save.isPending}
-            initial={{
-              unit: 'ea', active: true,
-              group_id: current !== 'all' && current !== NO_SECTION ? current : null,
-              supplier_id: supplierId || null,
-            }}
-            onCancel={() => setEditing(null)}
-            onSave={async (v) => { await save.mutateAsync(v); setEditing(null) }}
-          />
+    <>
+      <section className="card overflow-hidden">
+        <ErrorBox error={items.error} />
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-3.5 py-3 desk:px-5">
+          <SearchBox value={q} onChange={setQ} placeholder={`Search ${all.filter((i) => i.active).length.toLocaleString('en-AU')} products`} />
+          <select aria-label="Supplier" className="field !h-9 !w-auto !py-0 !text-[13px]" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+            <option value="">All suppliers</option>
+            <option value={NO_SUPPLIER}>No supplier set</option>
+            {supplierList.filter((s) => s.active).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <select aria-label="Category" className="field !h-9 !w-auto !py-0 !text-[13px]" value={current} onChange={(e) => setCat(e.target.value)}>
+            <option value="all">All categories · {pool.length.toLocaleString('en-AU')}</option>
+            {sections.map((s) => <option key={s.key} value={s.key}>{s.label} · {s.items.length}</option>)}
+          </select>
         </div>
-      )}
 
-      {visible.length > 0 && (
-        <div className="mt-3 flex items-center justify-between gap-2 text-sm">
-          <label className="flex items-center gap-2 text-ink-2">
-            <input type="checkbox" className="h-4 w-4" checked={chosen.length === visible.length}
+        {visible.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-2.5 border-b border-line-2 bg-hover px-3.5 py-2.5 text-[13px] text-ink-2 desk:px-5">
+            <input type="checkbox" className={box} checked={chosen.length === visible.length}
               ref={(el) => { if (el) el.indeterminate = chosen.length > 0 && chosen.length < visible.length }}
               onChange={(e) => toggle(visible.map((i) => i.id), e.target.checked)} />
-            Select all {visible.length}
+            <span className="flex-1">Select all shown</span>
+            <span className="hidden text-xs text-faint desk:block">Tick products to change several at once</span>
           </label>
-          {chosen.length === 0 && <span className="text-xs text-muted">Tick products to change several at once.</span>}
-        </div>
-      )}
+        )}
+
+        {shown.length === 0 && (
+          <p className="py-10 text-center text-muted">
+            {all.length === 0 ? 'No products yet. Add the things you buy and count.' : 'No products match.'}
+          </p>
+        )}
+
+        {shown.map((s) => {
+          const rows = rowsOf(s.items)
+          return (
+            <div key={s.key}>
+              <label className="flex cursor-pointer items-center gap-2.5 px-3.5 pb-2 pt-3 desk:px-5">
+                <input type="checkbox" className={box} aria-label={`Select all in ${s.label}`}
+                  checked={rows.every((i) => selected.has(i.id))}
+                  onChange={(e) => toggle(rows.map((i) => i.id), e.target.checked)} />
+                <span className="flex-1 font-semibold">{s.label}</span>
+                <span className="num text-xs text-muted">{s.items.length} {s.items.length === 1 ? 'product' : 'products'}</span>
+              </label>
+              {rows.map((i) => {
+                const extra = (linksByItem.get(i.id)?.length ?? 1) - 1
+                const usual = supplierName(i.supplier_id)
+                return (
+                  <div key={i.id}
+                    className={`grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-3 border-t border-line-2 px-3.5 py-2.5 desk:grid-cols-[20px_minmax(0,1fr)_56px_150px_80px_40px] desk:px-5 ${
+                      i.active ? '' : 'opacity-55'} ${selected.has(i.id) ? 'bg-accent-tint' : ''}`}>
+                    <input type="checkbox" className={box} aria-label={`Select ${i.name}`}
+                      checked={selected.has(i.id)} onChange={(e) => toggle([i.id], e.target.checked)} />
+                    <button type="button" className="min-w-0 text-left" onClick={() => setEditing(i)}>
+                      <span className="block font-medium desk:truncate">
+                        {i.name}
+                        {!i.active && <span className="ml-2 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted">Hidden</span>}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted desk:hidden">
+                        {i.unit} · {usual ?? 'No supplier set'}{extra > 0 && ` +${extra}`}
+                      </span>
+                    </button>
+                    <span className="hidden text-muted desk:block">{i.unit}</span>
+                    <span className={`hidden truncate text-[13px] desk:block ${usual ? 'text-ink-2' : 'text-faint'}`}>
+                      {usual ?? 'No supplier set'}
+                      {extra > 0 && <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[11px] font-semibold text-accent">+{extra}</span>}
+                    </span>
+                    <Price unit={i.unit} cost={i.unit_cost} paid={lastPaid(i)} />
+                    <span className="hidden text-right desk:block">
+                      <button type="button" aria-label={`Edit ${i.name}`} onClick={() => setEditing(i)}
+                        className="inline-grid h-8 w-8 place-items-center rounded-lg border border-input-line text-ink-2 hover:bg-hover">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+                        </svg>
+                      </button>
+                    </span>
+                  </div>
+                )
+              })}
+              {capped && s.items.length > PER_GROUP && (
+                <div className="border-t border-line-2 px-3.5 pb-3.5 pt-2 desk:px-5">
+                  <button type="button" className="text-[13px] font-medium text-accent" onClick={() => setCat(s.key)}>
+                    Show all {s.items.length} in {s.label} →
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {hiddenCount > 0 && (
+          <label className="flex items-center gap-2 border-t border-line px-3.5 py-3 text-[13px] text-ink-2 desk:px-5">
+            <input type="checkbox" className={box} checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
+            Show {hiddenCount} hidden {hiddenCount === 1 ? 'product' : 'products'}
+          </label>
+        )}
+      </section>
+      <p className="mt-3 text-xs text-muted">
+        The price is a fallback. Once an order for a product has been received, the price actually paid is what orders and the
+        count sheet use. Hide a product to take it out of both without losing its history.
+      </p>
 
       {chosen.length > 0 && (
         <BulkBar
@@ -175,86 +243,193 @@ function Products() {
         />
       )}
 
-      {shown.length === 0 && (
-        <p className="py-8 text-center text-sm text-muted">
-          {all.length === 0 ? 'No products yet. Add the things you buy and count.' : 'No products match.'}
-        </p>
+      {editing && (
+        <ProductDrawer
+          key={editing === 'new' ? 'new' : editing.id}
+          item={editing === 'new' ? null : editing}
+          defaults={{ group_id: current !== 'all' && current !== NO_SECTION ? current : null, supplier_id: supplierId && supplierId !== NO_SUPPLIER ? supplierId : null }}
+          groups={groupList}
+          suppliers={supplierList}
+          links={editing === 'new' ? [] : linksByItem.get(editing.id) ?? []}
+          onClose={() => setEditing(null)}
+        />
       )}
-
-      {shown.map((s) => (
-        <div key={s.key} className="mt-4">
-          <h3 className="mb-1 flex items-baseline justify-between border-b border-line pb-1 text-sm font-semibold">
-            <label className="flex items-center gap-3">
-              <input type="checkbox" className="h-4 w-4" aria-label={`Select all in ${s.label}`}
-                checked={s.items.every((i) => selected.has(i.id))}
-                onChange={(e) => toggle(s.items.map((i) => i.id), e.target.checked)} />
-              {s.label}
-            </label>
-            <span className="text-xs font-normal text-muted">{s.items.length} {s.items.length === 1 ? 'product' : 'products'}</span>
-          </h3>
-          {/* Column labels for the wide layout; on a phone each row says what it is. */}
-          <div className="hidden grid-cols-[1rem_1fr_5rem_10rem_7rem_4rem] gap-3 py-1 text-xs text-muted md:grid">
-            <span /><span>Product</span><span>Unit</span><span>Usually from</span><span className="text-right">Price</span><span />
-          </div>
-          <ul className="divide-y divide-line">
-            {s.items.map((i) =>
-              editing === i.id ? (
-                <li key={i.id} className="py-3">
-                  <RowForm fields={fields} initial={i as unknown as Record<string, unknown>} busy={save.isPending}
-                    onCancel={() => setEditing(null)}
-                    onSave={async (v) => { await save.mutateAsync({ id: i.id, ...v }); setEditing(null) }} />
-                </li>
-              ) : (
-                <li key={i.id} className={`grid grid-cols-[1rem_1fr_auto] items-center gap-x-3 py-2.5 md:grid-cols-[1rem_1fr_5rem_10rem_7rem_4rem] ${i.active ? '' : 'opacity-55'} ${selected.has(i.id) ? '-mx-2 rounded-lg bg-accent/8 px-2' : ''}`}>
-                  <input type="checkbox" className="row-span-2 h-4 w-4 md:row-span-1" aria-label={`Select ${i.name}`}
-                    checked={selected.has(i.id)} onChange={(e) => toggle([i.id], e.target.checked)} />
-                  <button type="button" className="min-w-0 text-left" aria-expanded={open === i.id}
-                    onClick={() => setOpen(open === i.id ? null : i.id)} title="Suppliers and their prices">
-                    <span className="block truncate font-medium">
-                      {i.name}
-                      {!i.active && <span className="ml-2 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted">Hidden</span>}
-                    </span>
-                    <span className="block truncate text-xs text-muted md:hidden">
-                      {i.unit}{supplierName(i.supplier_id) ? ` · ${supplierName(i.supplier_id)}` : ''}
-                      {(linksByItem.get(i.id)?.length ?? 0) > 1 && ` +${linksByItem.get(i.id)!.length - 1}`}
-                    </span>
-                  </button>
-                  <span className="hidden text-sm text-ink-2 md:block">{i.unit}</span>
-                  <button type="button" className="hidden truncate text-left text-sm text-ink-2 md:block" onClick={() => setOpen(open === i.id ? null : i.id)}>
-                    {supplierName(i.supplier_id) ?? <span className="text-muted">—</span>}
-                    {(linksByItem.get(i.id)?.length ?? 0) > 1 && (
-                      <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[11px] font-semibold text-accent">+{linksByItem.get(i.id)!.length - 1}</span>
-                    )}
-                  </button>
-                  <Price unit={i.unit} cost={i.unit_cost} paid={lastPaid(i)} />
-                  <span className="col-start-3 row-span-2 row-start-1 flex justify-end md:col-auto md:row-auto">
-                    <button type="button" className="btn btn-sm" onClick={() => setEditing(i.id)}>Edit</button>
-                  </span>
-                  {open === i.id && (
-                    <div className="col-span-full mt-2">
-                      <SupplierPanel item={i} links={linksByItem.get(i.id) ?? []} suppliers={supplierList.filter((x) => x.active)} />
-                    </div>
-                  )}
-                </li>
-              ),
-            )}
-          </ul>
-        </div>
-      ))}
-
-      {hiddenCount > 0 && (
-        <label className="mt-4 flex items-center gap-2 text-sm text-ink-2">
-          <input type="checkbox" className="h-4 w-4" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
-          Show {hiddenCount} hidden {hiddenCount === 1 ? 'product' : 'products'}
-        </label>
-      )}
-      <p className="mt-3 text-xs text-muted">
-        The cost per unit is a fallback. Once an order for a product has been received, the price actually paid is what orders and
-        the count sheet use. Untick “Active” to hide a product from both without losing its history.
-      </p>
-    </section>
+    </>
   )
 }
+
+/** Add or edit one product in a panel from the right (the whole screen on a phone). */
+function ProductDrawer({ item, defaults, groups, suppliers, links, onClose }: {
+  item: StockItem | null; defaults: { group_id: string | null; supplier_id: string | null }
+  groups: StockGroup[]; suppliers: Supplier[]; links: ItemSupplier[]; onClose: () => void
+}) {
+  const save = useSave('stock_items')
+  const [name, setName] = useState(item?.name ?? '')
+  const [price, setPrice] = useState(item?.unit_cost ? String(item.unit_cost) : '')
+  const [unit, setUnit] = useState(item?.unit ?? 'ea')
+  const [group, setGroup] = useState(item ? item.group_id ?? '' : defaults.group_id ?? '')
+  const [supplier, setSupplier] = useState(item ? item.supplier_id ?? '' : defaults.supplier_id ?? '')
+  const [active, setActive] = useState(item?.active ?? true)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    await save.mutateAsync({
+      ...(item ? { id: item.id } : {}),
+      name: name.trim(), unit, active,
+      unit_cost: price.trim() === '' ? null : parseMoney(price),
+      group_id: group || null,
+      supplier_id: supplier || null,
+    })
+    onClose()
+  }
+
+  const field = (label: string, control: ReactNode) => (
+    <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-2">{label}{control}</label>
+  )
+  // A unit set before the fixed list existed still shows, rather than silently changing.
+  const units = UNIT_OPTIONS.some((u) => u.value === unit) ? UNIT_OPTIONS : [{ value: unit, label: unit }, ...UNIT_OPTIONS]
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-[rgba(16,24,40,0.4)]" onClick={onClose} />
+      <form role="dialog" aria-modal="true" aria-label={item ? 'Edit product' : 'Add product'} onSubmit={submit}
+        className="fixed inset-y-0 right-0 z-51 flex w-full max-w-full flex-col bg-surface shadow-[-12px_0_32px_rgba(16,24,40,0.15)] desk:w-[420px]">
+        <div className="flex items-center gap-3 border-b border-line px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)]">
+          <h2 className="flex-1 text-base font-semibold">{item ? 'Edit product' : 'Add product'}</h2>
+          <button type="button" aria-label="Close" onClick={onClose} className="grid h-[34px] w-[34px] place-items-center rounded-lg bg-surface-2 text-ink-2">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="flex flex-1 flex-col gap-4 overflow-auto p-5">
+          <ErrorBox error={save.error} />
+          {field('Name', <input className="field" value={name} onChange={(e) => setName(e.target.value)} required autoFocus={!item} />)}
+          <div className="grid grid-cols-2 gap-3">
+            {field('Price', <MoneyInput size="sm" value={price} onChange={setPrice} placeholder="0.00" aria-label="Price" />)}
+            {field('Unit', (
+              <select className="field" value={unit} onChange={(e) => setUnit(e.target.value)}>
+                {units.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
+            ))}
+          </div>
+          {field('Category', (
+            <select className="field" value={group} onChange={(e) => setGroup(e.target.value)}>
+              <option value="">No category</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          ))}
+          {field('Usually ordered from', (
+            <select className="field" value={supplier} onChange={(e) => setSupplier(e.target.value)}>
+              <option value="">Not set</option>
+              {suppliers.filter((s) => s.active || s.id === supplier).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          ))}
+          <label className="flex items-center gap-2.5 text-sm">
+            <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            Show in orders and stock counts
+          </label>
+          {item && (
+            <div>
+              <div className="mb-2 text-[13px] font-medium text-ink-2">Suppliers and prices</div>
+              <SupplierPanel item={item} links={links} suppliers={suppliers.filter((x) => x.active)} />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line px-5 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3.5">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={!name.trim() || save.isPending}>{save.isPending ? 'Saving…' : 'Save product'}</button>
+        </div>
+      </form>
+    </>
+  )
+}
+
+const KEEP = ''
+const NONE = '__none'
+type BulkAction = 'price' | 'supplier' | 'category' | 'place' | 'active'
+
+/** Change every ticked product in one go: a dark bar at the bottom, one change at a time. */
+function BulkBar({
+  ids, groups, suppliers, locations, onDone,
+}: { ids: string[]; groups: Option[]; suppliers: Option[]; locations: Option[]; onDone: () => void }) {
+  const update = useBulkUpdate('stock_items')
+  const placeItems = usePlaceItems()
+  const [action, setAction] = useState<BulkAction | null>(null)
+  const [value, setValue] = useState(KEEP)
+  const open = (a: BulkAction) => { setAction(action === a ? null : a); setValue(KEEP) }
+
+  async function apply() {
+    if (action === 'place') await placeItems.mutateAsync({ locationId: value === NONE ? null : value, itemIds: ids, only: true })
+    else {
+      const patch = action === 'price' ? { unit_cost: value.trim() === '' ? null : parseMoney(value) }
+        : action === 'supplier' ? { supplier_id: value === NONE ? null : value }
+        : action === 'category' ? { group_id: value === NONE ? null : value }
+        : { active: value === 'show' }
+      await update.mutateAsync({ ids, patch })
+    }
+    setAction(null)
+    onDone()
+  }
+
+  const choose = (options: Option[], none?: string) => (
+    <select aria-label="Change to" className="field !h-9 !w-auto min-w-44 !border-[#344054] !bg-[#1D2939] !py-0 !text-[13px] !text-white" value={value} onChange={(e) => setValue(e.target.value)}>
+      <option value={KEEP} disabled>Choose…</option>
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      {none && <option value={NONE}>{none}</option>}
+    </select>
+  )
+  const btn = (a: BulkAction, label: string) => (
+    <button type="button" aria-pressed={action === a} onClick={() => open(a)}
+      className={`h-9 rounded-lg border px-3 text-[13px] font-medium text-white ${action === a ? 'border-[#5FC3B5] bg-[#0F766E]' : 'border-[#344054] bg-[#1D2939] hover:bg-[#344054]'}`}>
+      {label}
+    </button>
+  )
+  const ready = action === 'price' || value !== KEEP
+
+  return (
+    <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+76px)] z-20 mt-3 rounded-xl bg-[#101828] p-3 text-white shadow-[var(--shadow-float)] desk:bottom-4 dark:bg-[#2A303B]">
+      <ErrorBox error={update.error || placeItems.error} />
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-[100px] flex-1 font-semibold">{ids.length} selected</span>
+        {btn('price', 'Change price')}
+        {btn('supplier', 'Set supplier')}
+        {btn('category', 'Move category')}
+        {locations.length > 0 && btn('place', 'Counted at')}
+        {btn('active', 'Show / hide')}
+        <button type="button" aria-label="Clear selection" onClick={onDone}
+          className="grid h-9 w-9 place-items-center rounded-lg text-[#98A2B3] hover:bg-[#1D2939] hover:text-white">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      {action && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#344054] pt-3 text-[13px]">
+          <span className="text-[#D0D5DD]">
+            {action === 'price' ? 'New price for each' : action === 'supplier' ? 'Usually ordered from' : action === 'category' ? 'Move to'
+              : action === 'place' ? 'Counted only at' : 'Show in orders and counts'}
+          </span>
+          {action === 'price' && (
+            <input inputMode="decimal" placeholder="0.00" aria-label="New price" value={value} onChange={(e) => setValue(e.target.value)}
+              className="field num !h-9 !w-28 !border-[#344054] !bg-[#1D2939] !py-0 !text-[13px] !text-white" />
+          )}
+          {action === 'supplier' && choose(suppliers, 'No supplier')}
+          {action === 'category' && choose(groups, 'No category')}
+          {action === 'place' && choose(locations, 'Wherever its category is')}
+          {action === 'active' && choose([{ value: 'show', label: 'Shown' }, { value: 'hide', label: 'Hidden' }])}
+          <button type="button" className="btn btn-primary btn-sm h-9" disabled={!ready || update.isPending || placeItems.isPending} onClick={apply}>
+            {update.isPending || placeItems.isPending ? 'Saving…' : `Update ${ids.length}`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface Option { value: string; label: string }
 
 /**
  * Who sells this product, in what carton, and what each last charged. Carton size and the
@@ -346,78 +521,12 @@ function SupplierPanel({ item, links, suppliers }: { item: StockItem; links: Ite
   )
 }
 
-const KEEP = ''
-const NONE = '__none'
-
-/** Change the category, supplier or visibility of every ticked product in one go. Blank means leave as is. */
-function BulkBar({
-  ids, groups, suppliers, locations, onDone,
-}: { ids: string[]; groups: Option[]; suppliers: Option[]; locations: Option[]; onDone: () => void }) {
-  const update = useBulkUpdate('stock_items')
-  const placeItems = usePlaceItems()
-  const [group, setGroup] = useState(KEEP)
-  const [supplier, setSupplier] = useState(KEEP)
-  const [active, setActive] = useState(KEEP)
-  const [location, setLocation] = useState(KEEP)
-  const patch: Record<string, unknown> = {}
-  if (group !== KEEP) patch.group_id = group === NONE ? null : group
-  if (supplier !== KEEP) patch.supplier_id = supplier === NONE ? null : supplier
-  if (active !== KEEP) patch.active = active === 'show'
-  const changes = Object.keys(patch).length + (location !== KEEP ? 1 : 0)
-
-  const pick = (label: string, value: string, set: (v: string) => void, options: Option[], none: string) => (
-    <div className="min-w-36 flex-1">
-      <label className="label">{label}
-        <select className="field mt-1.5 !py-2" value={value} onChange={(e) => set(e.target.value)}>
-          <option value={KEEP}>Leave as is</option>
-          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          <option value={NONE}>{none}</option>
-        </select>
-      </label>
-    </div>
-  )
-
-  return (
-    <div className="sticky top-16 z-10 mt-3 rounded-xl border border-accent/40 bg-surface p-3 shadow-lg">
-      <ErrorBox error={update.error || placeItems.error} />
-      <p className="mb-2 text-sm font-semibold">{ids.length} {ids.length === 1 ? 'product' : 'products'} selected</p>
-      <div className="flex flex-wrap items-end gap-2">
-        {pick('Category', group, setGroup, groups, 'No category')}
-        {pick('Usually from', supplier, setSupplier, suppliers, 'No supplier')}
-        {locations.length > 0 && pick('Counted at (only)', location, setLocation, locations, 'Wherever its category is')}
-        <div className="min-w-32">
-          <label className="label">Show in orders &amp; counts
-            <select className="field mt-1.5 !py-2" value={active} onChange={(e) => setActive(e.target.value)}>
-              <option value={KEEP}>Leave as is</option>
-              <option value="show">Active</option>
-              <option value="hide">Hidden</option>
-            </select>
-          </label>
-        </div>
-        <button type="button" className="btn btn-primary !py-2" disabled={!changes || update.isPending || placeItems.isPending}
-          onClick={async () => {
-            if (Object.keys(patch).length) await update.mutateAsync({ ids, patch })
-            // That location becomes their one place, at the end of whatever is arranged there.
-            if (location !== KEEP) await placeItems.mutateAsync({ locationId: location === NONE ? null : location, itemIds: ids, only: true })
-            setGroup(KEEP); setSupplier(KEEP); setActive(KEEP); setLocation(KEEP)
-            onDone()
-          }}>
-          {update.isPending ? 'Saving…' : `Update ${ids.length}`}
-        </button>
-        <button type="button" className="btn !py-2" onClick={onDone}>Clear</button>
-      </div>
-    </div>
-  )
-}
-
-interface Option { value: string; label: string }
-
 /** The price an order would use, and where it came from. */
 function Price({ unit, cost, paid }: { unit: string; cost: number | null; paid: number | undefined }) {
   const value = paid || cost
   return (
-    <span className="num col-start-2 text-xs text-ink-2 md:col-auto md:text-right md:text-sm">
-      {value ? <>{aud(value)}<span className="text-muted md:hidden"> / {unit}</span></> : <span className="text-muted">no price</span>}
+    <span className="num text-right text-[13px] font-semibold desk:text-sm">
+      {value ? <>{aud(value)}<span className="font-normal text-muted desk:hidden"> / {unit}</span></> : <span className="font-normal text-faint">no price</span>}
       {paid && cost && Math.abs(paid - cost) > 0.004 ? <span className="block text-[11px] text-muted">last paid</span> : null}
     </span>
   )
@@ -443,42 +552,43 @@ function SupplierOrder() {
   const withItems = (suppliers.data ?? []).filter((s) => s.active && theirs(s.id).length > 0)
   const supplier = withItems.find((s) => s.id === supplierId) ?? withItems[0]
 
-  return (
-    <section className="card p-4">
-      <p className="mb-3 text-sm text-muted">
-        Put each supplier’s products in the order you go through them when ordering. New orders list them this way, and so
-        does the order you send.
+  if (!supplier)
+    return (
+      <p className="card px-4 py-10 text-center text-sm text-muted">
+        No products have a supplier yet. Set “Usually ordered from” on the Products tab — several at once with the tick boxes.
       </p>
-      {!supplier ? (
-        <p className="py-6 text-center text-sm text-muted">
-          No products have a supplier yet. Set “Usually from” on the Products tab — several at once with the tick boxes.
-        </p>
-      ) : (
-        <>
-          <label className="label" htmlFor="so-supplier">Supplier</label>
-          <select id="so-supplier" className="field mb-3 !w-auto !py-2" value={supplier.id} onChange={(e) => setSupplierId(e.target.value)}>
-            {withItems.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({theirs(s.id).length})</option>
-            ))}
-          </select>
-          {/* Remount per supplier, or when its products change, so the draft starts from what's saved.
-              Not on every refetch — coming back to the tab mustn't throw away an unsaved arrangement. */}
-          <Arrange key={supplier.id + theirs(supplier.id).map((i) => i.id).sort().join()} supplier={supplier}
-            items={theirs(supplier.id)} links={linksFor(links, supplier.id)} groups={groups.data ?? []} />
-        </>
-      )}
-    </section>
+    )
+  return (
+    // Remount per supplier, or when its products change, so the draft starts from what's saved.
+    // Not on every refetch — coming back to the tab mustn't throw away an unsaved arrangement.
+    <Arrange key={supplier.id + theirs(supplier.id).map((i) => i.id).sort().join()} supplier={supplier}
+      items={theirs(supplier.id)} links={linksFor(links, supplier.id)} groups={groups.data ?? []}
+      picker={
+        <select aria-label="Supplier" className="field !w-auto max-w-full" value={supplier.id} onChange={(e) => setSupplierId(e.target.value)}>
+          {withItems.map((s) => <option key={s.id} value={s.id}>{s.name} ({theirs(s.id).length})</option>)}
+        </select>
+      } />
   )
 }
 
-function Arrange({ supplier, items, links, groups }: { supplier: Supplier; items: StockItem[]; links: SupplierLinks; groups: StockGroup[] }) {
+const arrow = (d: string) => (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>
+)
+
+function Arrange({ supplier, items, links, groups, picker }: {
+  supplier: Supplier; items: StockItem[]; links: SupplierLinks; groups: StockGroup[]; picker: ReactNode
+}) {
   const saveOrder = useSetItemOrder()
   const saved = [...items].sort(supplierOrder(links))
-  const [ids, setIds] = useState(() => saved.map((i) => i.id))
+  const [ids, setIdsState] = useState(() => saved.map((i) => i.id))
+  // Every arrangement before this one, so Undo steps back one move at a time.
+  const [history, setHistory] = useState<string[][]>([])
   const [dragging, setDragging] = useState<string | null>(null)
+  const [over, setOver] = useState<number | null>(null)
   const byId = new Map(items.map((i) => [i.id, i]))
   const groupName = (id: string | null) => groups.find((g) => g.id === id)?.name
   const changed = ids.some((id, n) => id !== saved[n].id)
+  const setIds = (next: string[]) => { setHistory([...history, ids]); setIdsState(next) }
 
   const move = (from: number, to: number) => {
     if (to < 0 || to >= ids.length || from === to) return
@@ -488,56 +598,87 @@ function Arrange({ supplier, items, links, groups }: { supplier: Supplier; items
   }
   const sortBy = (key: (i: StockItem) => string) =>
     setIds([...ids].sort((a, b) => key(byId.get(a)!).localeCompare(key(byId.get(b)!)) || byId.get(a)!.name.localeCompare(byId.get(b)!.name)))
+  const iconBtn = 'grid h-9 w-9 place-items-center rounded-lg border border-input-line bg-surface text-ink-2 hover:bg-hover disabled:opacity-35 disabled:hover:bg-surface'
 
   return (
-    <div>
-      <ErrorBox error={saveOrder.error} />
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-muted">Start from:</span>
-        <button type="button" className="btn btn-sm" onClick={() => sortBy((i) => i.name)}>A–Z</button>
-        <button type="button" className="btn btn-sm" onClick={() => sortBy((i) => {
-          const g = groups.find((x) => x.id === i.group_id)
-          return g ? String(g.sort).padStart(6, '0') : '999999'
-        })}>By category</button>
-      </div>
+    <>
+      <section className="card overflow-hidden">
+        <div className="flex flex-wrap items-end gap-3 border-b border-line px-3.5 py-3 desk:px-5">
+          <div className="min-w-[220px] flex-1">
+            <p className="mb-2.5 text-[13px] text-muted">
+              Put each supplier's products in the order you go through them when ordering. New orders list them this way, and so
+              does the order you send.
+            </p>
+            {picker}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted">Reset to</span>
+            <button type="button" className="btn btn-sm h-9" onClick={() => sortBy((i) => i.name)}>A–Z</button>
+            <button type="button" className="btn btn-sm h-9" onClick={() => sortBy((i) => {
+              const g = groups.find((x) => x.id === i.group_id)
+              return g ? String(g.sort).padStart(6, '0') : '999999'
+            })}>By category</button>
+          </div>
+        </div>
+        <ErrorBox error={saveOrder.error} />
+        <ol>
+          {ids.map((id, n) => {
+            const i = byId.get(id)!
+            const from = dragging ? ids.indexOf(dragging) : -1
+            // A teal line where the dragged row will land.
+            const line = over === n && dragging && dragging !== id ? (from < n ? 'shadow-[inset_0_-2px_0_var(--accent)]' : 'shadow-[inset_0_2px_0_var(--accent)]') : ''
+            return (
+              <li key={id} draggable
+                onDragStart={() => setDragging(id)}
+                onDragOver={(e) => { e.preventDefault(); setOver(n) }}
+                onDrop={(e) => { e.preventDefault(); if (dragging) move(ids.indexOf(dragging), n); setDragging(null); setOver(null) }}
+                onDragEnd={() => { setDragging(null); setOver(null) }}
+                className={`grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 border-b border-line-2 px-3.5 py-2.5 desk:grid-cols-[16px_28px_minmax(0,1fr)_auto] desk:px-5 ${
+                  dragging === id ? 'bg-hover opacity-50' : ''} ${line}`}>
+                <span className="hidden cursor-grab text-faint desk:block" aria-hidden>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="9" cy="5" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="5" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="15" cy="19" r="1.5" /></svg>
+                </span>
+                <span className="num grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-xs font-semibold text-ink-2">{n + 1}</span>
+                <span className="min-w-0">
+                  <span className="block font-medium desk:truncate">{i.name}</span>
+                  <span className="block truncate text-xs text-muted">{i.unit}{groupName(i.group_id) ? ` · ${groupName(i.group_id)}` : ''}</span>
+                </span>
+                <span className="flex gap-1">
+                  <button type="button" className={iconBtn} aria-label={`Move ${i.name} to the top`} disabled={n === 0} onClick={() => move(n, 0)}>{arrow('M17 11 12 6l-5 5M12 18V6M5 3h14')}</button>
+                  <button type="button" className={iconBtn} aria-label={`Move ${i.name} up`} disabled={n === 0} onClick={() => move(n, n - 1)}>{arrow('m18 15-6-6-6 6')}</button>
+                  <button type="button" className={iconBtn} aria-label={`Move ${i.name} down`} disabled={n === ids.length - 1} onClick={() => move(n, n + 1)}>{arrow('m6 9 6 6 6-6')}</button>
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      </section>
 
-      <ol className="divide-y divide-line">
-        {ids.map((id, n) => {
-          const i = byId.get(id)!
-          return (
-            <li key={id} draggable
-              onDragStart={() => setDragging(id)}
-              onDragEnd={() => setDragging(null)}
-              onDragOver={(e) => { e.preventDefault(); if (dragging && dragging !== id) move(ids.indexOf(dragging), n) }}
-              className={`flex items-center gap-2 py-2 ${dragging === id ? 'opacity-40' : ''}`}>
-              <span className="hidden cursor-grab select-none px-1 text-muted md:inline" aria-hidden>⠿</span>
-              <span className="num w-7 shrink-0 text-right text-sm text-muted">{n + 1}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{i.name}</span>
-                <span className="block truncate text-xs text-muted">{i.unit}{groupName(i.group_id) ? ` · ${groupName(i.group_id)}` : ''}</span>
-              </span>
-              <span className="flex shrink-0 gap-1">
-                <button type="button" className="btn btn-sm !h-9 !w-9 !p-0" aria-label={`Move ${i.name} to the top`} disabled={n === 0} onClick={() => move(n, 0)}>⤒</button>
-                <button type="button" className="btn btn-sm !h-9 !w-9 !p-0" aria-label={`Move ${i.name} up`} disabled={n === 0} onClick={() => move(n, n - 1)}>↑</button>
-                <button type="button" className="btn btn-sm !h-9 !w-9 !p-0" aria-label={`Move ${i.name} down`} disabled={n === ids.length - 1} onClick={() => move(n, n + 1)}>↓</button>
-              </span>
-            </li>
-          )
-        })}
-      </ol>
-
-      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 mt-3 flex items-center gap-2 rounded-xl border border-line bg-surface p-3 shadow-lg md:bottom-4">
-        <span className="min-w-0 flex-1 text-sm text-muted">{changed ? 'Not saved yet' : `${supplier.name}’s order is saved`}</span>
-        <button type="button" className="btn" disabled={!changed} onClick={() => setIds(saved.map((i) => i.id))}>Undo</button>
-        <button type="button" className="btn btn-primary" disabled={!changed || saveOrder.isPending}
+      <SaveBar dirty={changed} message={changed ? `Unsaved changes to ${supplier.name}’s order` : `${supplier.name}’s order is saved`}>
+        <button type="button" className="btn h-10" disabled={!history.length}
+          onClick={() => { setIdsState(history[history.length - 1]); setHistory(history.slice(0, -1)) }}>Undo</button>
+        <button type="button" className={`btn h-10 px-[18px] ${changed ? 'btn-primary' : 'btn-saved'}`} disabled={!changed || saveOrder.isPending}
           onClick={() => saveOrder.mutate({
             supplierId: supplier.id,
             rows: ids.map((id, n) => ({ item_id: id, sort: (n + 1) * 10 })).filter((r) => links.get(r.item_id)?.sort !== r.sort),
           })}>
-          {saveOrder.isPending ? 'Saving…' : 'Save order'}
+          {saveOrder.isPending ? 'Saving…' : changed ? 'Save order' : 'Saved'}
         </button>
+      </SaveBar>
+    </>
+  )
+}
+
+/** A Catalogue list: a title and a line about it over a simple editable list. */
+function ListCard({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {
+  return (
+    <section className="card overflow-hidden">
+      <div className="border-b border-line px-3.5 py-3 desk:px-5">
+        <h2 className="text-base font-semibold">{title}</h2>
+        <p className="mt-0.5 text-[13px] text-muted">{sub}</p>
       </div>
-    </div>
+      <div className="px-3.5 pb-3 desk:px-5">{children}</div>
+    </section>
   )
 }
 
@@ -545,8 +686,7 @@ function Suppliers() {
   const suppliers = useSuppliers()
   if (suppliers.isLoading) return <Loading />
   return (
-    <section className="card p-4">
-      <p className="mb-2 text-sm text-muted">Untick “Active” to hide a supplier from the pickers without losing its history.</p>
+    <ListCard title="Suppliers" sub="Untick “Active” to hide a supplier from the pickers without losing its history.">
       <TableEditor table="suppliers" rows={suppliers.data ?? []} addLabel="Add supplier" canDelete={false}
         defaults={{ default_category: 'food', active: true }}
         fields={[
@@ -554,7 +694,7 @@ function Suppliers() {
           { key: 'default_category', label: 'Usually', type: 'select', options: CATEGORY_OPTIONS, width: 'md:w-40' },
           { key: 'active', label: 'Active', type: 'bool', width: 'md:w-16' },
         ]} />
-    </section>
+    </ListCard>
   )
 }
 
@@ -562,17 +702,14 @@ function Sections() {
   const groups = useStockGroups()
   if (groups.isLoading) return <Loading />
   return (
-    <section className="card p-4">
-      <p className="mb-2 text-sm text-muted">
-        Where stock lives — cool room, freezer, dry store. Products are grouped by these, and the count sheet is laid out in
-        this order so you can walk the shop once. Lowest number first.
-      </p>
+    <ListCard title="Categories"
+      sub="Products are grouped by these, and the count sheet follows this order where a product isn't on a shelf yet. Lowest number first.">
       <TableEditor table="stock_groups" rows={groups.data ?? []} addLabel="Add category"
         defaults={{ sort: ((groups.data ?? []).reduce((m, g) => Math.max(m, g.sort), 0) + 10) }}
         fields={[
           { key: 'name', label: 'Category', type: 'text', required: true },
           { key: 'sort', label: 'Order', type: 'number', width: 'md:w-20 md:text-right' },
         ]} />
-    </section>
+    </ListCard>
   )
 }

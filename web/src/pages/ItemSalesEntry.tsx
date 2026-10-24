@@ -6,7 +6,7 @@ import { aud, cents, parseMoney } from '../lib/format'
 import { qtyStr } from '../lib/purchasing'
 import { guessColumns, matchItem, normalise, readPdf, readText, usableCode, valueAt, type Report } from '../lib/report'
 import type { ItemSale, StockGroup, StockItem } from '../lib/types'
-import { bySection, CategoryChips, FoodTabs } from '../components/catalogue'
+import { bySection, CategoryChips, FoodHeader } from '../components/catalogue'
 import { ErrorBox, Loading, Segmented } from '../components/ui'
 
 type Kind = 'week' | 'day'
@@ -31,7 +31,7 @@ export default function ItemSalesEntry() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <FoodTabs />
+      <FoodHeader sub="Add what each product sold — a week's till report, or one day's figures." />
       <div className="mb-4 flex items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">Add item sales</h2>
         <Link to="/food/sales" className="text-sm font-medium text-accent">Item sales →</Link>

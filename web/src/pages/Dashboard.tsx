@@ -10,7 +10,7 @@ import { addDays, eachDay, fmtDay, fmtLong, fmtShort, todayStr, weekdayIdx, WEEK
 import { aud, audRound, audShort, cents, pct } from '../lib/format'
 import { dayTotal, hasMismatch, splitSum } from '../lib/logic'
 import type { AnyExpense, CategoryCode, SalesDay } from '../lib/types'
-import { periodWeeks, setPeriod, usePeriod, weeksSince, type Period } from '../lib/period'
+import { pickWeek, usePeriodRange, type Period } from '../lib/period'
 import { PeriodControls } from '../components/PeriodControls'
 import { axisProps, ChartCard, Legend, TipBox, usePalette, WeekBars, WeekLine } from '../components/charts'
 import { CatDot, ErrorBox, Loading } from '../components/ui'
@@ -23,16 +23,9 @@ const sum = <T,>(xs: T[], f: (x: T) => number) => cents(xs.reduce((s, x) => s + 
 
 export default function Dashboard() {
   const earliest = useEarliestSale()
-  const period = usePeriod()
-  const all = useMemo(() => weeksSince(earliest.data ?? null), [earliest.data])
-  const inPeriod = periodWeeks(period, all)
-  // The chart shows the last 16 weeks, reaching further back when the period does.
-  const shownFrom = [inPeriod[0] ?? period.week, all[Math.max(0, all.length - 16)]].sort()[0]
-  const lastDay = addDays(all[all.length - 1], 6)
+  const { period, all, inPeriod, shown, shownFrom, lastDay, from, to } = usePeriodRange(earliest.data ?? null)
   const sales = useSales(shownFrom, lastDay)
   const expenses = useAllExpenses(shownFrom, lastDay)
-  const from = inPeriod[0] ?? period.week
-  const to = addDays(inPeriod[inPeriod.length - 1] ?? period.week, 6)
 
   return (
     <div>
@@ -48,7 +41,7 @@ export default function Dashboard() {
         {earliest.isLoading || sales.isLoading || expenses.isLoading ? (
           <Loading />
         ) : (
-          <Body from={from} to={to} period={period} shown={all.filter((w) => w >= shownFrom)} inPeriod={inPeriod}
+          <Body from={from} to={to} period={period} shown={shown} inPeriod={inPeriod}
             sales={sales.data ?? []} expenses={(expenses.data ?? []).filter((e) => e.category !== 'setup')} />
         )}
       </div>
@@ -132,7 +125,7 @@ function Body({ from, to, period, shown, inPeriod, sales: shownSales, expenses: 
     .sort((a, b) => b.value - a.value)
   const channelTotal = m.channels.reduce((s, c) => s + c.value, 0) || 1
   const share = (v: number) => (m.totalSales ? pct(v / m.totalSales) : '—')
-  const pick = (week: string) => setPeriod({ mode: period.mode === 'all' ? 'week' : period.mode, week })
+  const pick = (week: string) => pickWeek(period, week)
   // Wages for the latest week missing them: dated that Sunday, or today if the week isn't over.
   const wagesWeek = noWages[noWages.length - 1]?.week
   const wagesDate = wagesWeek && [addDays(wagesWeek, 6), todayStr()].sort()[0]

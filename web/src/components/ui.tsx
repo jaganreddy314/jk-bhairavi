@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { CAT_COLOR, CAT_LABEL } from '../lib/categories'
 import type { CategoryCode } from '../lib/types'
 
@@ -149,5 +150,37 @@ export function SaveBar({ dirty, message, children }: { dirty: boolean; message:
       </span>
       {children}
     </div>
+  )
+}
+
+/** A headline figure: label, big value, one line of context. `to` makes the whole card a link. */
+export function Kpi({ label, value, note, tone, small, to }: {
+  label: string; value: string; note?: ReactNode; tone?: 'good' | 'bad'; small?: boolean; to?: string
+}) {
+  const body = (
+    <>
+      <div className="text-[13px] font-medium text-muted">{label}</div>
+      <div className={`num mt-1.5 truncate font-semibold tracking-[-0.02em] ${small ? 'text-base desk:text-base' : 'text-xl desk:text-[26px] desk:leading-8'} ${
+        tone === 'bad' ? 'text-bad' : tone === 'good' ? 'text-good' : ''}`}>{value}</div>
+      {note && <div className="mt-1 truncate text-xs text-muted">{note}</div>}
+    </>
+  )
+  if (to) return <Link to={to} className="card min-w-0 p-3 hover:bg-hover desk:p-4">{body}</Link>
+  return <div className="card min-w-0 p-3 desk:p-4">{body}</div>
+}
+
+/** Two KPIs a row on a phone; as many as fit on a computer. */
+export const KPI_GRID = 'grid grid-cols-2 gap-3 desk:grid-cols-[repeat(auto-fit,minmax(180px,1fr))]'
+
+/** A search field with a magnifier, sized to sit in a toolbar. */
+export function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <label className="flex h-9 min-w-40 flex-1 items-center gap-2 rounded-lg border border-input-line bg-surface px-2.5 focus-within:border-accent desk:max-w-[260px]">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-faint" aria-hidden>
+        <path d="m21 21-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />
+      </svg>
+      <input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder}
+        className="min-w-0 flex-1 bg-transparent text-base outline-none focus-visible:outline-none desk:text-[13px]" />
+    </label>
   )
 }

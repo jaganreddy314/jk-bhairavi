@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { addDays, fmtShort, monthStart, todayStr, toDate, weekStart } from './dates'
 
 // The shop runs Monday to Sunday, so every period is a run of whole weeks around one
@@ -75,3 +75,26 @@ export const weekLabel = (w: string) => {
   const end = addDays(w, 6)
   return `${fmtShort(w)} – ${fmtShort(end)} ${year(end)}`
 }
+
+/**
+ * Everything a page needs for the shared period: every week since `earliest`, the weeks
+ * in the period, the weeks a chart shows (the last 16, reaching further back when the
+ * period does) and the period's first and last day.
+ */
+export function usePeriodRange(earliest: string | null) {
+  const period = usePeriod()
+  const all = useMemo(() => weeksSince(earliest), [earliest])
+  const inPeriod = periodWeeks(period, all)
+  const shownFrom = [inPeriod[0] ?? period.week, all[Math.max(0, all.length - 16)]].sort()[0]
+  return {
+    period, all, inPeriod,
+    shown: all.filter((w) => w >= shownFrom),
+    shownFrom,
+    lastDay: addDays(all[all.length - 1], 6),
+    from: inPeriod[0] ?? period.week,
+    to: addDays(inPeriod[inPeriod.length - 1] ?? period.week, 6),
+  }
+}
+
+/** Selecting a week from a chart or table keeps the mode, except "All", which narrows to that week. */
+export const pickWeek = (p: Period, week: string) => setPeriod({ mode: p.mode === 'all' ? 'week' : p.mode, week })

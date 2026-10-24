@@ -15,6 +15,21 @@ export interface BusinessUser {
   email: string
   business_id: string
   display_name: string | null
+  group_id: string
+}
+
+/** An area of the app a security group can open. */
+export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'people' | 'payroll' | 'sensitive' | 'admin'
+
+export interface SecurityGroup {
+  id: string
+  business_id: string
+  name: string
+  description: string | null
+  perms: Perm[]
+  /** The built-in Owner group: every area, always. */
+  is_owner: boolean
+  sort: number
 }
 
 export type PaidVia = 'bank' | 'amex' | 'cash' | 'other'
@@ -50,12 +65,159 @@ export interface Supplier {
   active: boolean
 }
 
+/** Who a labour expense paid: a name and the rate used for hours × rate. */
+export interface StaffName {
+  id: string
+  name: string
+  hourly_rate: number | null
+  active: boolean
+}
+
+export type EmploymentType = 'full_time' | 'part_time' | 'casual'
+
+/** The employee record. `name` follows first/last (or preferred) name, set by the database. */
 export interface Staff {
   id: string
   business_id: string
   name: string
+  /** The rate a labour expense uses for hours × rate: the person's weekday rate. */
   hourly_rate: number | null
   active: boolean
+  /** 'payee' rows ("Super", "Tax") are what some labour expenses were booked against, not people. */
+  kind: 'employee' | 'payee'
+  first_name: string | null
+  last_name: string | null
+  preferred_name: string | null
+  email: string | null
+  mobile: string | null
+  date_of_birth: string | null
+  address: string | null
+  emergency_contact: string | null
+  role_title: string | null
+  employment_type: EmploymentType
+  status: 'active' | 'former'
+  start_date: string | null
+  end_date: string | null
+  award_code: string | null
+  classification_id: string | null
+  above_award: number
+  ordinary_hours: number | null
+  agreed_days: string | null
+  visa_type: string | null
+  visa_expiry: string | null
+  fortnight_hour_limit: number | null
+  right_to_work: string | null
+  right_to_work_checked_on: string | null
+  fwis_given_on: string | null
+  ceis_given_on: string | null
+  notes: string | null
+}
+
+export interface Award {
+  code: string
+  name: string
+  url: string | null
+}
+
+/** Multipliers on the ordinary hourly rate, by day. sat_pm only where Saturday afternoons differ. */
+export interface DayMultipliers { weekday: number; sat: number; sat_pm?: number; sun: number; ph: number }
+export type JuniorBand = 'u17' | '17' | '18' | '19' | '20'
+
+export interface AwardRuleSet {
+  id: string
+  award_code: string
+  key: string
+  name: string
+  effective_from: string
+  ftpt: DayMultipliers
+  casual: DayMultipliers
+  junior: { ftpt: Record<JuniorBand, number>; casual: Record<JuniorBand, number> }
+  extras: Record<string, { label: string; per_hour: number }>
+  notes: string | null
+}
+
+export interface AwardClassification {
+  id: string
+  award_code: string
+  rule_set_key: string
+  code: string
+  name: string
+  sort: number
+  active: boolean
+}
+
+export interface AwardRate {
+  classification_id: string
+  effective_from: string
+  weekly: number
+  hourly: number
+}
+
+export interface PayrollSettings {
+  business_id: string
+  legal_name: string | null
+  abn: string | null
+  address: string | null
+  pay_frequency: 'weekly' | 'fortnightly' | 'monthly'
+  period_start_dow: number
+  pay_day_offset: number
+  default_award_code: string | null
+  state: string
+  super_rate: number
+  super_payment_method: string | null
+  stp_status: string
+}
+
+export type TfnStatus = 'missing' | 'provided' | 'applied' | 'under_18' | 'pensioner' | 'exempt'
+
+/** What's on file for tax. The number itself never leaves the database; tfn_last3 is shown. */
+export interface StaffTax {
+  staff_id: string
+  tfn_last3: string | null
+  tfn_status: TfnStatus
+  declaration_date: string | null
+  residency: 'resident' | 'foreign' | 'working_holiday' | null
+  tax_free_threshold: boolean | null
+  study_loan: boolean | null
+  medicare_variation: string | null
+}
+
+export interface StaffSuper {
+  staff_id: string
+  business_id: string
+  choice: 'pending' | 'chosen' | 'stapled' | 'default' | 'smsf'
+  fund_name: string | null
+  usi: string | null
+  fund_abn: string | null
+  member_number: string | null
+  smsf_esa: string | null
+  smsf_bsb: string | null
+  smsf_account: string | null
+  extra_percent: number | null
+}
+
+export interface StaffBank {
+  staff_id: string
+  account_name: string | null
+  bsb: string | null
+  account_last4: string | null
+}
+
+export interface StaffLeave {
+  staff_id: string
+  business_id: string
+  leave_type: 'annual' | 'personal' | 'long_service'
+  hours: number
+  as_of: string
+}
+
+/** Whether tax, super and bank details are on file, for people who can't see them. */
+export interface StaffReadiness {
+  staff_id: string
+  has_tfn: boolean
+  tfn_status: TfnStatus
+  has_super: boolean
+  has_bank: boolean
 }
 
 export interface Expense {

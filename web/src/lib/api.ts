@@ -3,7 +3,9 @@ import { supabase } from './supabase'
 import { useBusinessId } from './business'
 import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
-  PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff,
+  PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
+  Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
+  StaffReadiness, StaffSuper, StaffTax,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
 } from './types'
@@ -123,7 +125,17 @@ const scopedTable = <T,>(name: string, order: string, moneyFields: string[] = []
 }
 
 export const useSuppliers = scopedTable<Supplier>('suppliers', 'name')
-export const useStaff = scopedTable<Staff>('staff', 'name', ['hourly_rate'])
+/** Full employee records: only people who can open People (row-level security). */
+export const useStaff = scopedTable<Staff>('staff', 'name', ['hourly_rate', 'above_award', 'ordinary_hours', 'fortnight_hour_limit'])
+
+/** Names and rates of everyone a labour expense can be paid to, for anyone who enters expenses. */
+export const useStaffNames = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['staff_names', biz],
+    queryFn: async () => money(await run(supabase.rpc('staff_names', { p_business: biz })) as StaffName[], ['hourly_rate']),
+  })
+}
 export const useRecurring = scopedTable<RecurringExpense>('recurring_expenses', 'name', ['amount'])
 export const usePartners = scopedTable<Partner>('partners', 'name', ['ownership_pct'])
 export const useContributions = scopedTable<PartnerContribution>('partner_contributions', 'contributed_on', ['amount'])
@@ -154,12 +166,15 @@ const DEPENDENTS: Record<string, string[]> = {
   expenses: ['expenses', 'expense', 'all-expenses', 'earliest'],
   recurring_expenses: ['recurring_expenses', 'all-expenses'],
   suppliers: ['suppliers'],
-  staff: ['staff'],
+  staff: ['staff', 'staff_names', 'staff_readiness'],
+  security_groups: ['security_groups', 'my_access'],
+  staff_super: ['staff_super', 'staff_readiness'],
+  staff_leave: ['staff_leave'],
   partners: ['partners'],
   partner_contributions: ['partner_contributions'],
   setup_costs: ['setup_costs'],
   businesses: ['businesses'],
-  business_users: ['business_users'],
+  business_users: ['business_users', 'my_access'],
   stock_groups: ['stock_groups', 'stock_items', 'stock_location_groups'],
   stock_locations: ['stock_locations', 'stock_location_groups', 'stock_item_places'],
   stock_location_groups: ['stock_location_groups'],
@@ -182,7 +197,7 @@ const DEPENDENTS: Record<string, string[]> = {
 // copies business_id from the parent order or count, which is what row-level security checks.
 const SCOPED = new Set(['sales_days', 'expenses', 'recurring_expenses', 'suppliers', 'staff', 'partners',
   'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items',
-  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts'])
+  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups'])
 
 function useWrite<V>(tableName: string, fn: (v: V) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
   const qc = useQueryClient()
@@ -257,7 +272,7 @@ export const useSaveBusiness = () =>
 
 export const useAddPerson = () => {
   const biz = useBusinessId()
-  return useWrite<{ email: string; display_name: string | null }>('business_users', (p) =>
+  return useWrite<{ email: string; display_name: string | null; group_id: string }>('business_users', (p) =>
     supabase.from('business_users').insert({ ...p, email: p.email.trim().toLowerCase(), business_id: biz }),
   )
 }
@@ -624,5 +639,134 @@ export const useSetPersonPassword = () => {
       return data!
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['business_users'] }),
+  })
+}
+
+// ---------- access ----------
+
+/** The signed-in person's security group in the selected business. */
+export const useMyAccess = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['my_access', biz],
+    queryFn: async () => {
+      const { data: auth } = await supabase.auth.getSession()
+      const email = auth.session?.user.email?.toLowerCase() ?? ''
+      const rows = await run(supabase.from('business_users').select('group_id, security_groups(*)').eq('business_id', biz).eq('email', email))
+      return ((rows as unknown as { security_groups: SecurityGroup | null }[])[0]?.security_groups ?? null)
+    },
+  })
+}
+
+export const useSecurityGroups = scopedTable<SecurityGroup>('security_groups', 'sort')
+
+export const useSetUserGroup = () => {
+  const biz = useBusinessId()
+  return useWrite<{ email: string; group_id: string }>('business_users', (v) =>
+    supabase.from('business_users').update({ group_id: v.group_id }).eq('business_id', biz).eq('email', v.email),
+  )
+}
+
+// ---------- awards (shared by every business) ----------
+
+const globalTable = <T,>(name: string, order: string, moneyFields: string[] = []) => () =>
+  useQuery({
+    queryKey: [name],
+    staleTime: 10 * 60_000,
+    queryFn: async () => money(await runAll((a, b) => supabase.from(name).select('*').order(order).range(a, b)), moneyFields as never[]) as T[],
+  })
+
+export const useAwards = globalTable<Award>('awards', 'code')
+export const useAwardRuleSets = globalTable<AwardRuleSet>('award_rule_sets', 'effective_from')
+export const useAwardClassifications = globalTable<AwardClassification>('award_classifications', 'sort')
+export const useAwardRates = globalTable<AwardRate>('award_rates', 'effective_from', ['weekly', 'hourly'])
+
+export const useSaveAwardRate = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (r: AwardRate) => run(supabase.from('award_rates').upsert(r)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['award_rates'] }),
+  })
+}
+
+// ---------- payroll ----------
+
+export const usePayrollSettings = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['payroll_settings', biz],
+    queryFn: async () => {
+      const rows = money(await run(supabase.from('payroll_settings').select('*').eq('business_id', biz)) as PayrollSettings[], ['super_rate'])
+      return rows[0] ?? null
+    },
+  })
+}
+
+export const useSavePayrollSettings = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: Partial<PayrollSettings>) => run(supabase.from('payroll_settings').upsert({ ...v, business_id: biz })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['payroll_settings'] }),
+  })
+}
+
+export const useStaffReadiness = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['staff_readiness', biz],
+    queryFn: async () => (await run(supabase.rpc('staff_readiness', { p_business: biz }))) as StaffReadiness[],
+  })
+}
+
+// The encrypted columns can't be selected at all, so these name what they read.
+const TAX_COLUMNS = 'staff_id, tfn_last3, tfn_status, declaration_date, residency, tax_free_threshold, study_loan, medicare_variation'
+const BANK_COLUMNS = 'staff_id, account_name, bsb, account_last4'
+
+const onePerStaff = <T,>(table: string, columns: string, moneyFields: string[] = []) => (staffId: string | undefined) =>
+  useQuery({
+    queryKey: [table, staffId],
+    enabled: !!staffId,
+    queryFn: async () => (money(await run(supabase.from(table).select(columns).eq('staff_id', staffId!)) as T[], moneyFields as never[]))[0] ?? null,
+  })
+
+export const useStaffTax = onePerStaff<StaffTax>('staff_tax', TAX_COLUMNS)
+export const useStaffSuper = onePerStaff<StaffSuper>('staff_super', '*', ['extra_percent'])
+export const useStaffBank = onePerStaff<StaffBank>('staff_bank', BANK_COLUMNS)
+
+export const useStaffLeave = (staffId: string | undefined) =>
+  useQuery({
+    queryKey: ['staff_leave', staffId],
+    enabled: !!staffId,
+    queryFn: async () => money(await run(supabase.from('staff_leave').select('*').eq('staff_id', staffId!)) as StaffLeave[], ['hours']),
+  })
+
+export const useSaveStaffTax = () =>
+  useRpc<{ staff: string; tfn: string | null; status: string | null; declared: string | null; residency: string | null; threshold: boolean | null; studyLoan: boolean | null; medicare: string | null }>(
+    'save_staff_tax', ['staff_tax', 'staff_readiness'], (v) => ({
+      p_staff: v.staff, p_tfn: v.tfn, p_tfn_status: v.status, p_declaration_date: v.declared, p_residency: v.residency,
+      p_tax_free_threshold: v.threshold, p_study_loan: v.studyLoan, p_medicare_variation: v.medicare,
+    }))
+
+export const useSaveStaffBank = () =>
+  useRpc<{ staff: string; accountName: string; bsb: string; account: string | null }>('save_staff_bank', ['staff_bank', 'staff_readiness'], (v) => ({
+    p_staff: v.staff, p_account_name: v.accountName, p_bsb: v.bsb, p_account: v.account,
+  }))
+
+export const useSaveStaffSuper = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: Omit<StaffSuper, 'business_id'>) => run(supabase.from('staff_super').upsert({ ...v, business_id: biz })),
+    onSuccess: () => ['staff_super', 'staff_readiness'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
+  })
+}
+
+export const useSaveStaffLeave = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rows: Omit<StaffLeave, 'business_id'>[]) => run(supabase.from('staff_leave').upsert(rows.map((r) => ({ ...r, business_id: biz })))),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff_leave'] }),
   })
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useAllExpenses, useExpense, useExpenses, usePurchaseOrders, useRemove, useSave, useStaff, useSuppliers } from '../lib/api'
+import { useAllExpenses, useExpense, useExpenses, usePurchaseOrders, useRemove, useSave, useStaffNames, useSuppliers } from '../lib/api'
 import { CAT_COLOR, CAT_LABEL, ENTRY_CATEGORIES, PAID_VIA } from '../lib/categories'
 import { addDays, fmtShort, toDate, todayStr, weekStart } from '../lib/dates'
 import { aud, cents, parseMoney } from '../lib/format'
@@ -90,7 +90,7 @@ function Form({
 }: { existing?: Expense; prefill: Partial<Expense>; onAdded: (p: Partial<Expense>, message: string) => void; onEdit: () => void }) {
   const nav = useNavigate()
   const suppliers = useSuppliers()
-  const staff = useStaff()
+  const staff = useStaffNames()
   const orders = usePurchaseOrders()
   const save = useSave('expenses')
   const remove = useRemove('expenses')
@@ -287,7 +287,7 @@ function Sidebar() {
   const week = useAllExpenses(weekStart(today), today)
   const recent = useExpenses({ from: addDays(today, -60), to: today })
   const suppliers = useSuppliers()
-  const staff = useStaff()
+  const staff = useStaffNames()
   const name = new Map([...(suppliers.data ?? []), ...(staff.data ?? [])].map((s) => [s.id, s.name]))
   const rows = (week.data ?? []).filter((e) => e.category !== 'setup')
   const total = cents(rows.reduce((s, e) => s + e.amount, 0))

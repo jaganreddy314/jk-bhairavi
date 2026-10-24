@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { useAllExpenses, useEarliestSale, useSales, useStaff, useSuppliers } from '../lib/api'
+import { useAllExpenses, useEarliestSale, useSales, useStaffNames, useSuppliers } from '../lib/api'
 import { useBusiness } from '../lib/business'
 import { CAT_COLOR, CAT_LABEL, CHANNELS, OPERATING } from '../lib/categories'
 import { addDays, eachDay, fmtDay, fmtLong, fmtShort, todayStr, weekdayIdx, WEEKDAYS } from '../lib/dates'
@@ -353,7 +353,7 @@ function Tile({ label, value, sub, tone, to }: { label: string; value: string; s
 
 function CategoryItems({ items }: { items: AnyExpense[] }) {
   const supplierName = new Map((useSuppliers().data ?? []).map((s) => [s.id, s.name]))
-  const staffName = new Map((useStaff().data ?? []).map((s) => [s.id, s.name]))
+  const staffName = new Map((useStaffNames().data ?? []).map((s) => [s.id, s.name]))
   if (!items.length) return <p className="px-2 py-2 text-xs text-muted">Nothing entered in this period.</p>
   return (
     <ul className="mx-2 mb-2 divide-y divide-line rounded-lg border border-line text-sm">

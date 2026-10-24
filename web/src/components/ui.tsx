@@ -104,7 +104,7 @@ export function Empty({ children }: { children: ReactNode }) {
 /** A money field with a "$" in front. `lg` is the big close-of-trade style input. */
 export function MoneyInput({ value, onChange, size = 'lg', className = '', ...rest }: {
   value: string; onChange: (v: string) => void; size?: 'lg' | 'sm'; className?: string
-  id?: string; placeholder?: string; disabled?: boolean; 'aria-label'?: string; autoFocus?: boolean
+  id?: string; placeholder?: string; disabled?: boolean; 'aria-label'?: string; autoFocus?: boolean; onBlur?: () => void
 }) {
   const lg = size === 'lg'
   return (
@@ -181,6 +181,51 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
       </svg>
       <input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder}
         className="min-w-0 flex-1 bg-transparent text-base outline-none focus-visible:outline-none desk:text-[13px]" />
+    </label>
+  )
+}
+
+/**
+ * A panel from the right (the whole screen on a phone) for editing one thing.
+ * Escape or the backdrop closes it.
+ */
+export function Drawer({ title, sub, onClose, onSubmit, footer, children }: {
+  title: string; sub?: ReactNode; onClose: () => void; onSubmit?: () => void; footer: ReactNode; children: ReactNode
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-[rgba(16,24,40,0.4)]" onClick={onClose} />
+      <form role="dialog" aria-modal="true" aria-label={title}
+        onSubmit={(e) => { e.preventDefault(); onSubmit?.() }}
+        className="fixed inset-y-0 right-0 z-51 flex w-full max-w-full flex-col bg-surface shadow-[-12px_0_32px_rgba(16,24,40,0.15)] desk:w-[440px]">
+        <div className="flex items-start gap-3 border-b border-line px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)]">
+          <div className="flex-1">
+            <h2 className="text-base font-semibold">{title}</h2>
+            {sub && <p className="mt-0.5 text-[13px] text-muted">{sub}</p>}
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose} className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="flex flex-1 flex-col gap-4 overflow-auto p-5">{children}</div>
+        <div className="flex justify-end gap-2 border-t border-line px-5 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3.5">{footer}</div>
+      </form>
+    </>
+  )
+}
+
+/** A labelled control in a drawer or form. */
+export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-2">
+      {label}
+      {children}
+      {hint && <span className="text-xs font-normal text-muted">{hint}</span>}
     </label>
   )
 }

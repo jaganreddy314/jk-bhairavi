@@ -17,6 +17,10 @@ import StockCounts from './pages/StockCounts'
 import StockCountSheet from './pages/StockCountSheet'
 import Catalogue from './pages/Catalogue'
 import ItemSalesEntry from './pages/ItemSalesEntry'
+import People from './pages/People'
+import Account from './pages/Account'
+import Person from './pages/Person'
+import { Home, Need } from './lib/access'
 
 // Charts are the heaviest code; load them only when a page that draws them opens.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -47,23 +51,26 @@ export default function App() {
             <BusinessGate email={session.user.email}>
               <Routes>
                 <Route element={<Layout email={session.user.email} />}>
-                  <Route index element={<Suspense fallback={<Loading />}><Dashboard /></Suspense>} />
-                  <Route path="sales" element={<SalesEntry />} />
-                  <Route path="expenses" element={<ExpensesList />} />
-                  <Route path="expenses/new" element={<ExpenseForm />} />
-                  <Route path="expenses/:id" element={<ExpenseForm />} />
-                  <Route path="recurring" element={<Recurring />} />
-                  <Route path="orders" element={<Orders />} />
-                  <Route path="orders/new" element={<OrderForm />} />
-                  <Route path="orders/:id" element={<OrderForm />} />
-                  <Route path="stock" element={<StockCounts />} />
-                  <Route path="stock/:id" element={<StockCountSheet />} />
-                  <Route path="food" element={<Suspense fallback={<Loading />}><FoodCost /></Suspense>} />
-                  <Route path="food/catalogue" element={<Catalogue />} />
-                  <Route path="food/sales" element={<Suspense fallback={<Loading />}><ItemSales /></Suspense>} />
-                  <Route path="food/sales/add" element={<ItemSalesEntry />} />
+                  <Route index element={<Home dashboard={<Suspense fallback={<Loading />}><Dashboard /></Suspense>} />} />
+                  <Route path="sales" element={<Need perms={['sales']}><SalesEntry /></Need>} />
+                  <Route path="expenses" element={<Need perms={['finance']}><ExpensesList /></Need>} />
+                  <Route path="expenses/new" element={<Need perms={['finance']}><ExpenseForm /></Need>} />
+                  <Route path="expenses/:id" element={<Need perms={['finance']}><ExpenseForm /></Need>} />
+                  <Route path="recurring" element={<Need perms={['finance']}><Recurring /></Need>} />
+                  <Route path="orders" element={<Need perms={['purchasing']}><Orders /></Need>} />
+                  <Route path="orders/new" element={<Need perms={['purchasing']}><OrderForm /></Need>} />
+                  <Route path="orders/:id" element={<Need perms={['purchasing']}><OrderForm /></Need>} />
+                  <Route path="stock" element={<Need perms={['stock']}><StockCounts /></Need>} />
+                  <Route path="stock/:id" element={<Need perms={['stock']}><StockCountSheet /></Need>} />
+                  <Route path="food" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><FoodCost /></Suspense></Need>} />
+                  <Route path="food/catalogue" element={<Need perms={['catalogue']}><Catalogue /></Need>} />
+                  <Route path="food/sales" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><ItemSales /></Suspense></Need>} />
+                  <Route path="food/sales/add" element={<Need perms={['finance']}><ItemSalesEntry /></Need>} />
                   <Route path="food-cost" element={<Navigate to="/food" replace />} />
-                  <Route path="settings" element={<Settings />} />
+                  <Route path="people" element={<Need perms={['people', 'payroll', 'admin']}><People /></Need>} />
+                  <Route path="people/:id" element={<Need perms={['people', 'payroll']}><Person /></Need>} />
+                  <Route path="settings" element={<Need perms={['admin']}><Settings /></Need>} />
+                  <Route path="account" element={<Account email={session.user.email} />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
               </Routes>

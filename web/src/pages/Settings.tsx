@@ -1,13 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  useChangeMyPassword, useCreateBusiness, useAddPerson, useBusinessUsers, useContributions, usePartners,
-  useRemovePerson, useSaveBusiness, useSetPersonPassword, useSetupCosts, useStaff,
+  useChangeMyPassword, useCreateBusiness, useContributions, usePartners, useSaveBusiness, useSetupCosts,
 } from '../lib/api'
 import { useBusiness } from '../lib/business'
 import { aud, cents } from '../lib/format'
 import { TableEditor } from '../components/TableEditor'
-import { DeleteButton, ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
+import { ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
 
 function Section({ title, hint, children, id }: { title: string; hint?: ReactNode; children: ReactNode; id: string }) {
   return (
@@ -20,7 +19,6 @@ function Section({ title, hint, children, id }: { title: string; hint?: ReactNod
 }
 
 export default function Settings() {
-  const staff = useStaff()
   const partners = usePartners()
   const contributions = useContributions()
   const setup = useSetupCosts()
@@ -30,31 +28,18 @@ export default function Settings() {
     <div>
       <PageHeader title="Settings" />
       <nav aria-label="Settings sections" className="mb-4 flex flex-wrap gap-1.5">
-        {[['business', 'Business'], ['password', 'Your password'], ['staff', 'Staff'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
+        {[['business', 'Business'], ['partners', 'Partners'], ['setup', 'Setup costs'], ['contributions', 'Contributions']].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="chip">{label}</a>
         ))}
       </nav>
       <p className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-2">
-        Suppliers, products and their categories have moved to{' '}
-        <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link>.
+        Staff are in <Link className="font-semibold text-accent" to="/people">People</Link>; suppliers, products and their
+        categories in <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link>.
       </p>
 
       <div className="grid gap-4">
         <BusinessSection />
-        <MyPasswordSection />
         <PartnerSummary />
-
-        <Section id="staff" title="Staff" hint="The hourly rate fills in wages automatically (hours × rate) when you add a labour expense.">
-          {staff.isLoading ? <Loading /> : (
-            <TableEditor table="staff" rows={staff.data ?? []} addLabel="Add staff member" canDelete={false}
-              defaults={{ active: true }}
-              fields={[
-                { key: 'name', label: 'Name', type: 'text', required: true },
-                { key: 'hourly_rate', label: 'Hourly rate', type: 'money', width: 'md:w-28 md:text-right' },
-                { key: 'active', label: 'Active', type: 'bool', width: 'md:w-16' },
-              ]} />
-          )}
-        </Section>
 
         <Section id="partners" title="Partners" hint="Ownership percentages should add up to 100%.">
           {partners.isLoading ? <Loading /> : (
@@ -113,13 +98,9 @@ function BusinessSection() {
 
 function BusinessFields() {
   const { business, businesses, setBusinessId } = useBusiness()
-  const people = useBusinessUsers()
   const saveBusiness = useSaveBusiness()
   const createBusiness = useCreateBusiness()
-  const addPerson = useAddPerson()
   const [name, setName] = useState(business?.name ?? '')
-  const [email, setEmail] = useState('')
-  const [personName, setPersonName] = useState('')
   const [newBiz, setNewBiz] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<unknown>(null)
@@ -138,7 +119,7 @@ function BusinessFields() {
 
   return (
     <Section id="business" title="Business" hint="Everything on the other pages belongs to the business shown in the header.">
-      <ErrorBox error={error || saveBusiness.error || addPerson.error} />
+      <ErrorBox error={error || saveBusiness.error} />
 
       <form
         className="flex flex-wrap items-end gap-2"
@@ -168,34 +149,10 @@ function BusinessFields() {
       />
       <p className="mt-1.5 text-xs text-muted">Changing this only changes the entry screen. Figures already saved stay as they are.</p>
 
-      <h3 className="mt-5 font-semibold">Who can sign in</h3>
-      <p className="mb-2 text-sm text-muted">
-        Only these addresses can open <b>{business?.name}</b>. Add someone, set them a password, and tell them —
-        they can change it themselves once they're in.
+      <p className="mt-5 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-2">
+        Who can sign in, and what each person can open, is in{' '}
+        <Link className="font-semibold text-accent" to="/people?tab=access">People → Access</Link>.
       </p>
-      {people.isLoading ? <Loading /> : (
-        <ul className="divide-y divide-line">
-          {(people.data ?? []).map((p) => <PersonRow key={p.email} email={p.email} displayName={p.display_name} />)}
-        </ul>
-      )}
-      <form
-        className="mt-2 flex flex-wrap items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (!email.trim()) return
-          addPerson.mutate({ email, display_name: personName.trim() || null }, { onSuccess: () => { setEmail(''); setPersonName('') } })
-        }}
-      >
-        <div className="min-w-48 flex-1">
-          <label className="label" htmlFor="p-email">Email</label>
-          <input id="p-email" type="email" className="field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="them@example.com" />
-        </div>
-        <div className="w-36">
-          <label className="label" htmlFor="p-name">Name <span className="font-normal text-muted">(optional)</span></label>
-          <input id="p-name" className="field" value={personName} onChange={(e) => setPersonName(e.target.value)} />
-        </div>
-        <button className="btn" disabled={!email.trim() || addPerson.isPending}>Add person</button>
-      </form>
 
       <h3 className="mt-5 font-semibold">Other businesses</h3>
       <p className="mb-2 text-sm text-muted">
@@ -222,66 +179,7 @@ function BusinessFields() {
  * One person who can sign in: their address, and the two things an owner needs to do —
  * give them a password, or take their access away.
  */
-function PersonRow({ email, displayName }: { email: string; displayName: string | null }) {
-  const removePerson = useRemovePerson()
-  const setPassword = useSetPersonPassword()
-  const [open, setOpen] = useState(false)
-  const [pw, setPw] = useState('')
-  const [done, setDone] = useState<'set' | 'created' | null>(null)
-  const tooShort = pw.length > 0 && pw.length < 8
-
-  return (
-    <li className="py-2.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-medium">{email}</span>
-        {displayName && <span className="text-sm text-muted">{displayName}</span>}
-        <button type="button" className="btn btn-sm" onClick={() => { setOpen((v) => !v); setDone(null) }}>
-          {open ? 'Cancel' : 'Set password'}
-        </button>
-        <DeleteButton label="Remove" busy={removePerson.isPending} onConfirm={() => removePerson.mutate(email)} />
-      </div>
-
-      <ErrorBox error={removePerson.error || setPassword.error} />
-
-      {done && (
-        <p className="mt-1 text-sm font-semibold text-good">
-          ✓ {done === 'created' ? 'Login created.' : 'Password changed.'} Tell {displayName || email} what it is — they can
-          change it themselves in Settings.
-        </p>
-      )}
-
-      {open && (
-        <form
-          className="mt-2 flex flex-wrap items-end gap-2 rounded-xl bg-surface-2 p-3"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            if (pw.length < 8) return
-            const r = await setPassword.mutateAsync({ email, password: pw })
-            setPw('')
-            setOpen(false)
-            setDone(r.created ? 'created' : 'set')
-          }}
-        >
-          <div className="min-w-48 flex-1">
-            <label className="label" htmlFor={`pw-${email}`}>New password for {displayName || email}</label>
-            <input id={`pw-${email}`} type="text" className="field" value={pw} onChange={(e) => setPw(e.target.value)}
-              placeholder="At least 8 characters" autoComplete="off" autoFocus />
-            <p className="mt-1 text-xs text-muted">
-              Shown as you type, because you have to pass it on. They can change it once they're signed in.
-            </p>
-          </div>
-          <button className="btn btn-primary" disabled={tooShort || !pw || setPassword.isPending}>
-            {setPassword.isPending ? 'Saving…' : 'Set it'}
-          </button>
-        </form>
-      )}
-      {open && tooShort && <p className="mt-1 text-xs text-bad">A bit longer — 8 characters or more.</p>}
-    </li>
-  )
-}
-
-/** Your own password. Changing it doesn't sign you out of this device. */
-function MyPasswordSection() {
+export function MyPasswordSection() {
   const change = useChangeMyPassword()
   const [pw, setPw] = useState('')
   const [again, setAgain] = useState('')

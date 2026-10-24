@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useEarliestSale, useExpenses, useRemove, useStaff, useSuppliers } from '../lib/api'
+import { useEarliestSale, useExpenses, useRemove, useStaffNames, useSuppliers } from '../lib/api'
 import { CAT_LABEL, ENTRY_CATEGORIES, PAID_VIA } from '../lib/categories'
 import { fmtDay } from '../lib/dates'
 import { aud, cents } from '../lib/format'
@@ -13,7 +13,7 @@ export default function ExpensesList() {
   const [category, setCategory] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const suppliers = useSuppliers().data ?? []
-  const staff = useStaff().data ?? []
+  const staff = useStaffNames().data ?? []
   const { data, isLoading, error } = useExpenses({ from: range.from, to: range.to, category, supplierId })
   const remove = useRemove('expenses')
 

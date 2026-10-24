@@ -1,5 +1,5 @@
 // Set another person's password, so somebody can be given access without an email
-// round-trip: an owner adds their address in Settings, sets a password, and tells them.
+// round-trip: an owner adds their address in People → Access, sets a password, and tells them.
 //
 // The browser can't do this — changing another user's password needs the service-role
 // key, which must never reach a browser. So it happens here, and the one question that
@@ -65,7 +65,17 @@ Deno.serve(async (req) => {
 
   if (sharedErr) return reply({ error: sharedErr.message }, 400)
   if (!shared?.length)
-    return reply({ error: 'That person is not in any of your businesses. Add them in Settings first.' }, 403)
+    return reply({ error: 'That person is not in any of your businesses. Add them in People → Access first.' }, 403)
+
+  // Sharing a business isn't enough: only someone whose security group includes
+  // "Settings and access" there may set another person's password. Asked as the caller,
+  // so the same has_perm() the database uses for everything else decides it.
+  let allowed = false
+  for (const { business_id } of shared) {
+    const { data } = await asCaller.rpc('has_perm', { b: business_id, p: 'admin' })
+    if (data === true) { allowed = true; break }
+  }
+  if (!allowed) return reply({ error: 'Only people with Settings and access can set passwords.' }, 403)
 
   // Allowed. Now the part that needs the service role.
   const admin = createClient(URL_, SERVICE, { auth: { persistSession: false } })
@@ -87,7 +97,7 @@ Deno.serve(async (req) => {
   const { error } = await admin.auth.admin.createUser({
     email,
     password,
-    // No confirmation email: an owner vouched for them by adding them in Settings.
+    // No confirmation email: an owner vouched for them by adding them in People → Access.
     email_confirm: true,
   })
   if (error) return reply({ error: error.message }, 500)

@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useBusiness } from '../lib/business'
+import { usePerms } from '../lib/access'
+import type { Perm } from '../lib/types'
 
 /** Lucide icons, drawn from their own paths so the app needs no icon library. */
 const Icon = ({ size = 18, stroke = 1.8, children }: { size?: number; stroke?: number; children: ReactNode }) => (
@@ -26,46 +28,62 @@ const GLYPH = {
   chevronsUpDown: <><path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" /></>,
   chevronDown: <path d="m6 9 6 6 6-6" />,
   logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></>,
+  people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
 }
 
-interface NavItem { to: string; label: string; glyph: ReactNode; end?: boolean }
+/** A page in the navigation, and the areas (any one of them) that open it. */
+interface NavItem { to: string; label: string; glyph: ReactNode; end?: boolean; perms: Perm[] }
 
 const OVERVIEW: NavItem[] = [
-  { to: '/', label: 'Dashboard', end: true, glyph: GLYPH.dashboard },
-  { to: '/sales', label: 'Enter sales', glyph: GLYPH.sales },
-  { to: '/expenses/new', label: 'Add expense', end: true, glyph: GLYPH.expense },
+  { to: '/', label: 'Dashboard', end: true, glyph: GLYPH.dashboard, perms: ['finance'] },
+  { to: '/sales', label: 'Enter sales', glyph: GLYPH.sales, perms: ['sales'] },
+  { to: '/expenses/new', label: 'Add expense', end: true, glyph: GLYPH.expense, perms: ['finance'] },
 ]
 
 const INVENTORY: NavItem[] = [
-  { to: '/orders', label: 'Purchase orders', glyph: GLYPH.orders },
-  { to: '/stock', label: 'Stock counts', glyph: GLYPH.stock },
-  { to: '/food', label: 'Food', glyph: GLYPH.food },
+  { to: '/orders', label: 'Purchase orders', glyph: GLYPH.orders, perms: ['purchasing'] },
+  { to: '/stock', label: 'Stock counts', glyph: GLYPH.stock, perms: ['stock'] },
+  { to: '/food', label: 'Food', glyph: GLYPH.food, perms: ['finance', 'catalogue'] },
+]
+
+const TEAM: NavItem[] = [
+  { to: '/people', label: 'People', glyph: GLYPH.people, perms: ['people', 'payroll', 'admin'] },
 ]
 
 /** Needed regularly, but not every day: under “Manage” on a computer, in the account sheet on a phone. */
 const MORE: NavItem[] = [
-  { to: '/expenses', label: 'Expenses', end: true, glyph: GLYPH.list },
-  { to: '/recurring', label: 'Standard expenses', glyph: GLYPH.repeat },
-  { to: '/settings', label: 'Settings', glyph: GLYPH.settings },
+  { to: '/expenses', label: 'Expenses', end: true, glyph: GLYPH.list, perms: ['finance'] },
+  { to: '/recurring', label: 'Standard expenses', glyph: GLYPH.repeat, perms: ['finance'] },
+  { to: '/settings', label: 'Settings', glyph: GLYPH.settings, perms: ['admin'] },
 ]
 
 /** The phone's bottom bar, either side of the raised + button. */
-const TABS: { to: string; label: string; glyph: ReactNode; end?: boolean }[] = [
-  { to: '/', label: 'Home', end: true, glyph: GLYPH.dashboard },
-  { to: '/orders', label: 'Orders', glyph: GLYPH.orders },
-  { to: '/stock', label: 'Stock', glyph: GLYPH.stock },
-  { to: '/food', label: 'Food', glyph: GLYPH.food },
+const TABS: NavItem[] = [
+  { to: '/', label: 'Home', end: true, glyph: GLYPH.dashboard, perms: ['finance'] },
+  { to: '/orders', label: 'Orders', glyph: GLYPH.orders, perms: ['purchasing'] },
+  { to: '/stock', label: 'Stock', glyph: GLYPH.stock, perms: ['stock'] },
+  { to: '/food', label: 'Food', glyph: GLYPH.food, perms: ['finance', 'catalogue'] },
 ]
 
 /** What the + button offers: the three things entered most. */
 const QUICK_ADD = [
-  { to: '/sales', label: 'Enter sales', sub: "Today's totals and cash", glyph: '$', tone: 'bg-accent-tint text-accent' },
-  { to: '/expenses/new', label: 'Add expense', sub: 'Wages, rent, bills and more', glyph: '−', tone: 'bg-[#EEF4FF] text-[#444CE7] dark:bg-[#1F2A5C] dark:text-[#A4BCFD]' },
-  { to: '/orders/new', label: 'New purchase order', sub: 'Order from a supplier', glyph: '+', tone: 'bg-[#FFFAEB] text-[#DC6803] dark:bg-[#2B1E07] dark:text-[#FEC84B]' },
+  { to: '/sales', label: 'Enter sales', sub: "Today's totals and cash", glyph: '$', tone: 'bg-accent-tint text-accent', perms: ['sales'] as Perm[] },
+  { to: '/expenses/new', label: 'Add expense', sub: 'Wages, rent, bills and more', glyph: '−', tone: 'bg-[#EEF4FF] text-[#444CE7] dark:bg-[#1F2A5C] dark:text-[#A4BCFD]', perms: ['finance'] as Perm[] },
+  { to: '/orders/new', label: 'New purchase order', sub: 'Order from a supplier', glyph: '+', tone: 'bg-[#FFFAEB] text-[#DC6803] dark:bg-[#2B1E07] dark:text-[#FEC84B]', perms: ['purchasing'] as Perm[] },
 ]
 
 const isOn = (pathname: string, item: { to: string; end?: boolean }) =>
   item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + '/')
+
+/**
+ * The navigation a person's group allows. Food opens on the catalogue for someone who
+ * can see the catalogue but not the money side of it.
+ */
+function useAllowed() {
+  const { can } = usePerms()
+  return (items: NavItem[]) => items.filter((n) => can(...n.perms))
+    .map((n) => (n.to === '/food' && !can('finance') ? { ...n, to: '/food/catalogue' } : n))
+}
 
 /** "Caltex Kedron" → "CK": the business's tile in the sidebar and top bar. */
 const initials = (name = '') =>
@@ -147,23 +165,27 @@ const GroupLabel = ({ children, first }: { children: ReactNode; first?: boolean 
 )
 
 function Sidebar({ email }: { email?: string }) {
+  const allowed = useAllowed()
   return (
     <aside className="sticky top-0 hidden h-dvh flex-col gap-1 overflow-y-auto border-r border-line bg-surface px-3 py-4 desk:flex">
       <div className="px-2 pb-3.5 pt-1.5">
         <BusinessSwitcher />
       </div>
       <nav aria-label="Main" className="flex flex-col gap-1">
-        <GroupLabel first>Overview</GroupLabel>
-        {OVERVIEW.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
-        <GroupLabel>Inventory</GroupLabel>
-        {INVENTORY.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
-        <GroupLabel>Manage</GroupLabel>
-        {MORE.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
+        {([['Overview', OVERVIEW], ['Inventory', INVENTORY], ['Team', TEAM], ['Manage', MORE]] as const)
+          .map(([label, items]) => [label, allowed([...items])] as const)
+          .filter(([, items]) => items.length > 0)
+          .map(([label, items], i) => (
+            <div key={label} className="flex flex-col gap-1">
+              <GroupLabel first={i === 0}>{label}</GroupLabel>
+              {items.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}</NavLink>)}
+            </div>
+          ))}
       </nav>
       <div className="mt-auto flex items-center gap-2.5 border-t border-line px-1.5 pt-3">
         <Avatar email={email} size={32} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium">{email}</div>
+          <NavLink to="/account" className="block truncate text-[13px] font-medium hover:text-accent" title="Your account">{email}</NavLink>
           <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
         <ThemeButton className="h-8 w-8 rounded-lg" />
@@ -204,6 +226,11 @@ function PhoneChrome({ email }: { email?: string }) {
   // Also closes on Back, which changes the page without a tap in the sheet.
   useEffect(() => setSheet(null), [pathname])
   const go = (to: string) => { setSheet(null); navigate(to) }
+  const allowed = useAllowed()
+  const { can } = usePerms()
+  const tabs = allowed(TABS)
+  const quick = QUICK_ADD.filter((a) => can(...a.perms))
+  const half = Math.ceil(tabs.length / 2)
 
   return (
     <>
@@ -215,19 +242,20 @@ function PhoneChrome({ email }: { email?: string }) {
         </button>
       </header>
 
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-end border-t border-line bg-surface/95 px-1 pb-[calc(env(safe-area-inset-bottom)+6px)] pt-1.5 backdrop-blur-md desk:hidden">
-        {TABS.slice(0, 2).map((t) => <Tab key={t.to} {...t} />)}
-        <div className="flex justify-center">
+      <nav aria-label="Main" style={{ gridTemplateColumns: `repeat(${tabs.length + (quick.length ? 1 : 0)}, minmax(0, 1fr))` }}
+        className="fixed inset-x-0 bottom-0 z-30 grid items-end border-t border-line bg-surface/95 px-1 pb-[calc(env(safe-area-inset-bottom)+6px)] pt-1.5 backdrop-blur-md desk:hidden">
+        {tabs.slice(0, half).map((t) => <Tab key={t.to} {...t} />)}
+        {quick.length > 0 && <div className="flex justify-center">
           <button type="button" aria-label="Add" onClick={() => setSheet('add')}
             className="-mt-[22px] grid h-[52px] w-[52px] place-items-center rounded-full border-4 border-page bg-accent text-accent-ink shadow-[0_6px_16px_rgba(15,118,110,0.35)]">
             <Icon size={24} stroke={2.4}>{GLYPH.plus}</Icon>
           </button>
-        </div>
-        {TABS.slice(2).map((t) => <Tab key={t.to} {...t} />)}
+        </div>}
+        {tabs.slice(half).map((t) => <Tab key={t.to} {...t} />)}
       </nav>
 
       <Sheet open={sheet === 'add'} onClose={close}>
-        {QUICK_ADD.map((a) => (
+        {quick.map((a) => (
           <button key={a.to} type="button" className={sheetRow} onClick={() => go(a.to)}>
             <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[10px] font-semibold ${a.tone}`}>{a.glyph}</span>
             <span className="flex-1">
@@ -239,11 +267,14 @@ function PhoneChrome({ email }: { email?: string }) {
       </Sheet>
 
       <Sheet open={sheet === 'account'} onClose={close}>
-        <div className="flex items-center gap-3 px-3 pb-3 pt-1">
+        <button type="button" onClick={() => go('/account')} className="flex w-full items-center gap-3 rounded-xl px-3 pb-3 pt-1 text-left">
           <Avatar email={email} size={36} />
-          <span className="min-w-0 truncate text-sm font-medium">{email}</span>
-        </div>
-        {[...OVERVIEW.slice(1), ...MORE].map((m) => (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{email}</span>
+            <span className="block text-xs text-muted">Your account and password</span>
+          </span>
+        </button>
+        {allowed([...OVERVIEW.slice(1), ...TEAM, ...MORE]).map((m) => (
           <button key={m.to} type="button" onClick={() => go(m.to)}
             className={`${sheetRow} font-medium ${isOn(pathname, m) ? 'text-accent' : 'text-ink-2'}`}>
             <Icon size={20}>{m.glyph}</Icon>

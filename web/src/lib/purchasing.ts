@@ -1,6 +1,7 @@
 import { fmtDay } from './dates'
 import { aud, cents } from './format'
 import type { PoStatus, PurchaseOrderLine, StockCountLine, WeeklyFoodCost } from './types'
+import type { PillTone } from '../components/ui'
 
 export const lineTotal = (l: Pick<PurchaseOrderLine, 'qty' | 'unit_cost'>) => cents(l.qty * l.unit_cost)
 export const orderTotal = (lines: Pick<PurchaseOrderLine, 'qty' | 'unit_cost'>[]) =>
@@ -24,12 +25,12 @@ export const PO_STATUS_LABEL: Record<PoStatus, string> = {
   cancelled: 'Cancelled',
 }
 
-/** Tailwind classes for the little status pill, so one status looks the same everywhere. */
-export const PO_STATUS_CLASS: Record<PoStatus, string> = {
-  draft: 'bg-surface-2 text-ink-2',
-  sent: 'bg-warn-bg text-warn-ink border border-warn-line',
-  received: 'bg-good/10 text-good',
-  cancelled: 'bg-surface-2 text-muted line-through',
+/** The pill colour for each status, so one status looks the same everywhere. */
+export const PO_STATUS_TONE: Record<PoStatus, PillTone> = {
+  draft: 'neutral',
+  sent: 'info',
+  received: 'success',
+  cancelled: 'danger',
 }
 
 /** Quantities are typed by hand, so trailing zeros are trimmed: 2.500 reads as 2.5. */

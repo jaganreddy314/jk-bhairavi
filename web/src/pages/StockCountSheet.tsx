@@ -9,7 +9,7 @@ import { aud } from '../lib/format'
 import { layout, walkSections } from '../lib/layout'
 import { countLineValue, countTotal, qtyStr } from '../lib/purchasing'
 import type { StockCount, StockCountLine } from '../lib/types'
-import { DeleteButton, ErrorBox, Flash, Loading, PageHeader } from '../components/ui'
+import { DeleteButton, ErrorBox, Loading, Segmented } from '../components/ui'
 
 // One shared empty array: `?? []` would be a new array every render, which defeats
 // the memos built on top of it and re-groups the whole sheet on every keystroke.
@@ -41,7 +41,9 @@ function Sheet({ count }: { count: StockCount }) {
   // boxes, and a request per keystroke on a phone in a cool room is no use to anybody.
   // Keyed by line id, or "line id@location id" for a product counted in several places.
   const [draft, setDraft] = useState<Record<string, string>>({})
-  const [saved, setSaved] = useState(0)
+  const [shelf, setShelf] = useState(0)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'all' | 'todo'>('all')
 
   const final = count.status === 'final'
   const rows = lines.data ?? NO_LINES
@@ -135,171 +137,248 @@ function Sheet({ count }: { count: StockCount }) {
     if (!dirty.length) return
     await saveLines.mutateAsync(dirty)
     setDraft({})
-    setSaved(Date.now())
   }
 
+  /** The box for one row: a place's share of a split product, or the whole line. */
+  const keyOf = (row: StockCountLine, loc: string | null) => (loc && splitOf(row) ? `${row.id}@${loc}` : row.id)
+  const shownStr = (row: StockCountLine, loc: string | null) => {
+    const at = splitOf(row)
+    if (at && loc) return partStr(row, at, loc)
+    return row.id in draft ? draft[row.id] : row.qty ? qtyStr(row.qty) : ''
+  }
+  const step = (row: StockCountLine, loc: string | null, by: number) => {
+    const next = Math.max(0, Math.round(((Number(shownStr(row, loc)) || 0) + by) * 1000) / 1000)
+    setDraft({ ...draft, [keyOf(row, loc)]: qtyStr(next) })
+  }
+
+  const progress = sections.map((s) => ({ done: s.rows.filter(({ row }) => entered(row, s.locationId)).length, of: s.rows.length }))
+  const countedAll = progress.reduce((a, p) => a + p.done, 0)
+  const rowsAll = progress.reduce((a, p) => a + p.of, 0)
+  const at = Math.min(shelf, Math.max(0, sections.length - 1))
+  const current = sections[at]
+  const go = (i: number) => { setShelf(i); setQuery(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+
+  // A search looks through every shelf; otherwise it's the shelf you're standing at.
+  const q = query.trim().toLowerCase()
+  const visible = (q
+    ? sections.flatMap((s) => s.rows.filter(({ item }) => item.name.toLowerCase().includes(q)).map((r) => ({ ...r, section: s })))
+    : (current?.rows ?? []).map((r) => ({ ...r, section: current! })))
+    .filter(({ row, section }) => filter === 'all' || !entered(row, section.locationId))
+  const shelfValue = current ? countTotal(current.rows.map(({ row }) => ({ qty: qtyAt(row, current.locationId), unit_cost: row.unit_cost }))) : 0
+
+  const outline = 'btn btn-sm h-9 font-medium'
+  const icon = (d: string) => <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>
+
   return (
-    <div className="mx-auto max-w-2xl pb-32 md:pb-24">
-      <PageHeader
-        title={`Stock on ${fmtDay(count.count_date)}`}
-        subtitle={final ? 'Finished — this week’s figures use it.' : 'Close of trade. Enter what’s on the shelf.'}
-        action={<Link to="/stock" className="text-sm font-medium text-accent">All counts →</Link>}
-      />
-      <ErrorBox error={lines.error || saveLines.error || saveCount.error || removeCount.error || topUp.error} />
+    <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="text-[13px] font-medium text-accent">{final ? 'Finished count' : 'Close of trade'}</div>
+          <h1 className="mt-0.5 text-2xl font-semibold tracking-[-0.02em]">Stock on {fmtDay(count.count_date)}</h1>
+          <p className="mt-1 text-muted">{final ? 'This week’s figures use it.' : 'Enter what’s on the shelf, in the order you walk the store.'}</p>
+        </div>
+        <div className="flex gap-2">
+          <Link to="/food/catalogue?tab=layout" className={outline}>{icon('M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z')}Store layout</Link>
+          <Link to="/stock" className={outline}>{icon('M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01')}All counts</Link>
+        </div>
+      </div>
 
-      {previous && (
-        <p className="mb-3 text-sm text-muted">
-          Last counted {fmtDay(previous.count_date)} — {aud(previous.value)} on hand. The “was” figures below are from that count.
-        </p>
-      )}
+      <div className="mt-4 space-y-2 empty:hidden">
+        <ErrorBox error={lines.error || saveLines.error || saveCount.error || removeCount.error || topUp.error} />
+        {previous && (
+          <p className="text-sm text-muted">
+            Last counted {fmtDay(previous.count_date)} — {aud(previous.value)} on hand. The “was” figures are from that count.
+          </p>
+        )}
+        {missing > 0 && !final && (
+          <p className="flex flex-wrap items-center gap-2 rounded-[10px] border border-warn-line bg-warn-bg px-3 py-2 text-sm text-warn-ink">
+            {missing} new {missing === 1 ? 'item isn’t' : 'items aren’t'} on this sheet yet.
+            <button type="button" className="btn btn-sm" disabled={topUp.isPending} onClick={() => topUp.mutate(count.count_date)}>
+              {topUp.isPending ? 'Adding…' : 'Add them'}
+            </button>
+          </p>
+        )}
+        {!final && rows.length > 0 && !(locations.data ?? []).length && (
+          <p className="text-sm text-muted">
+            Tip: set up your shelves and fridge doors so this sheet follows your walk round the store.{' '}
+            <Link className="font-semibold text-accent" to="/food/catalogue?tab=layout">Store layout →</Link>
+          </p>
+        )}
+      </div>
 
-      {missing > 0 && !final && (
-        <p className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-warn-line bg-warn-bg px-3 py-2 text-sm text-warn-ink">
-          {missing} new {missing === 1 ? 'item isn’t' : 'items aren’t'} on this sheet yet.
-          <button type="button" className="btn btn-sm" disabled={topUp.isPending}
-            onClick={() => topUp.mutate(count.count_date)}>
-            {topUp.isPending ? 'Adding…' : 'Add them'}
-          </button>
-        </p>
-      )}
-
-      {!final && rows.length > 0 && (
-        <p className="mb-3 text-sm text-muted">
-          {(locations.data ?? []).length
-            ? 'In the order you walk the store.'
-            : 'Tip: set up your shelves and fridge doors so this sheet follows your walk round the store.'}{' '}
-          <Link className="font-semibold text-accent" to="/food/catalogue?tab=layout">Store layout →</Link>
-        </p>
-      )}
-
-      {/* Jump straight to a shelf; the figure is how many on it have been counted. */}
-      {sections.length > 1 && (
-        <nav aria-label="Jump to" className="sticky top-14 z-10 -mx-4 mb-3 flex gap-1.5 overflow-x-auto bg-page/95 px-4 py-2 backdrop-blur">
-          {sections.map((s) => {
-            const done = s.rows.filter(({ row }) => entered(row, s.locationId)).length
-            return (
-              <a key={s.key || 'loose'} href={`#walk-${s.key}`}
-                className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${done === s.rows.length ? 'border-good/40 bg-good/10 text-good' : 'border-line bg-surface text-ink-2'}`}
-                onClick={(e) => { e.preventDefault(); document.getElementById(`walk-${s.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>
-                {s.name} <span className="num text-muted">{done}/{s.rows.length}</span>
-              </a>
-            )
-          })}
-        </nav>
-      )}
-
-      {lines.isLoading ? (
-        <Loading />
-      ) : rows.length === 0 ? (
-        <p className="card px-4 py-8 text-center text-sm text-muted">
+      {lines.isLoading ? <Loading /> : rows.length === 0 ? (
+        <p className="card mt-5 px-4 py-8 text-center text-sm text-muted">
           Nothing to count. Add stock items in <Link className="font-semibold text-accent" to="/food/catalogue">Food → Catalogue</Link>.
         </p>
       ) : (
-        <div className="grid gap-4">
-          {sections.map((s) => {
-            const sectionTotal = countTotal(s.rows.map(({ row }) => ({ qty: qtyAt(row, s.locationId), unit_cost: row.unit_cost })))
-            return (
-              <section key={s.key || 'loose'} id={`walk-${s.key}`} className="card scroll-mt-28 p-4">
-                <div className="mb-1 flex items-baseline justify-between gap-3">
-                  <h2 className="font-semibold">{s.name} <span className="text-sm font-normal text-muted">· {s.rows.length}</span></h2>
-                  <span className="num text-sm font-semibold text-ink-2">{aud(sectionTotal)}</span>
+        <div className="mt-5 flex flex-1 flex-wrap items-start gap-4">
+          {/* Phone: the shelves as a row of chips. */}
+          <div className="-mx-4 flex w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] desk:hidden">
+            {sections.map((s, i) => (
+              <button key={s.key || 'loose'} type="button" onClick={() => go(i)}
+                className={`flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border pl-2 pr-3 text-[13px] font-medium ${
+                  i === at ? 'border-accent-tint-line bg-accent-tint text-accent' : 'border-line bg-surface text-ink-2'}`}>
+                <ShelfNumber n={i + 1} done={progress[i].done === progress[i].of} size={22} />
+                {s.name}<span className="num font-normal text-muted">{progress[i].done}/{progress[i].of}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Computer: the walk down the side, with how far through each shelf you are. */}
+          <aside className="card sticky top-4 hidden max-h-[calc(100dvh-7rem)] max-w-[280px] flex-[1_1_240px] overflow-y-auto p-2 desk:block">
+            <div className="px-2.5 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.04em] text-faint">Walk order</div>
+            {sections.map((s, i) => (
+              <button key={s.key || 'loose'} type="button" onClick={() => go(i)}
+                className={`flex w-full flex-col gap-1.5 rounded-lg p-2.5 text-left ${i === at ? 'bg-accent-tint' : 'hover:bg-surface-2'}`}>
+                <span className="flex w-full items-center gap-2">
+                  <ShelfNumber n={i + 1} done={progress[i].done === progress[i].of} size={20} />
+                  <span className={`flex-1 text-[13px] font-medium ${i === at ? 'text-accent' : ''}`}>{s.name}</span>
+                  <span className="num text-xs text-muted">{progress[i].done}/{progress[i].of}</span>
+                </span>
+                <span className="ml-7 block h-1 w-[calc(100%-28px)] overflow-hidden rounded-sm bg-track">
+                  <span className="block h-1 rounded-sm bg-accent" style={{ width: `${(progress[i].done / progress[i].of) * 100}%` }} />
+                </span>
+              </button>
+            ))}
+          </aside>
+
+          <section className="card min-w-0 flex-[999_1_520px] overflow-hidden">
+            <div className="flex flex-wrap items-center gap-3 border-b border-line px-3.5 py-3 desk:px-5">
+              <div className="min-w-40 flex-1">
+                <div className="text-base font-semibold">{q ? `Matching “${query.trim()}”` : current?.name}</div>
+                <div className="num text-xs text-muted">
+                  {q ? `${visible.length} found across every shelf` : `${progress[at]?.done ?? 0} of ${current?.rows.length ?? 0} counted · ${aud(shelfValue)}`}
                 </div>
-                <ul className="divide-y divide-line">
-                  {s.rows.map(({ item, row }) => {
-                    const at = s.locationId ? splitOf(row) : null
-                    const loc = at ? s.locationId! : null
-                    const prev = previousLine.get(item.id)
-                    // Last time's figure for this place when it was split then too, else the whole.
-                    const was = loc && prev?.place_qty ? prev.place_qty[loc] : prev?.qty
-                    const value = countLineValue({ qty: qtyAt(row, loc), unit_cost: row.unit_cost })
-                    const key = loc ? `${row.id}@${loc}` : row.id
-                    return (
-                      <li key={row.id} className="flex items-center gap-3 py-2">
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{item.name}</span>
-                          <span className="text-xs text-muted">
-                            {s.locationId && item.group_id && groupName.has(item.group_id) && `${groupName.get(item.group_id)} · `}
-                            {aud(row.unit_cost)}/{item.unit}
-                            {was != null && was > 0 && ` · was ${qtyStr(was)}`}
-                          </span>
-                          {at && (
-                            <span className="block truncate text-xs text-accent">
-                              Also at {at.filter((l) => l !== loc).map((l) => locName.get(l)).join(', ')} · total {qtyStr(qtyOf(row))} {item.unit}
-                            </span>
-                          )}
-                        </span>
-                        {final ? (
-                          <span className="num w-24 text-right text-sm text-ink-2">{qtyStr(qtyAt(row, loc))} {item.unit}</span>
-                        ) : (
-                          <span className="flex shrink-0 items-center gap-1.5">
-                            <input
-                              aria-label={`${item.name} quantity in ${item.unit}`}
-                              className="field !w-20 !py-2 text-right"
-                              inputMode="decimal"
-                              placeholder="0"
-                              value={at && loc ? partStr(row, at, loc) : row.id in draft ? draft[row.id] : row.qty ? qtyStr(row.qty) : ''}
-                              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-                            />
-                            <span className="w-7 text-xs text-muted">{item.unit}</span>
-                          </span>
-                        )}
-                        <span className="num w-20 shrink-0 text-right text-sm font-semibold">{aud(value)}</span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </section>
-            )
-          })}
-
-          <section className="card p-4">
-            <label className="label" htmlFor="count-note">Note <span className="font-normal text-muted">(optional)</span></label>
-            <input id="count-note" className="field" defaultValue={count.note ?? ''} disabled={final}
-              placeholder="Who counted, anything odd…"
-              onBlur={(e) => e.target.value !== (count.note ?? '') && saveCount.mutate({ id: count.id, note: e.target.value || null })} />
-
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-              {final ? (
-                <button type="button" className="btn" disabled={saveCount.isPending}
-                  onClick={() => saveCount.mutate({ id: count.id, status: 'open' })}>
-                  Reopen to change it
-                </button>
-              ) : (
-                <button type="button" className="btn btn-primary" disabled={saveCount.isPending || dirty.length > 0}
-                  onClick={() => saveCount.mutate({ id: count.id, status: 'final' })}>
-                  Finish this count
-                </button>
-              )}
-              {!final && dirty.length > 0 && <span className="text-xs text-muted">Save your changes first.</span>}
-              <span className="ml-auto">
-                <DeleteButton label="Delete count" busy={removeCount.isPending}
-                  onConfirm={async () => { await removeCount.mutateAsync(count.id); nav('/stock') }} />
-              </span>
+              </div>
+              <label className="flex h-9 w-full items-center gap-2 rounded-lg border border-input-line px-2.5 focus-within:border-accent desk:w-[220px]">
+                {icon('m21 21-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z')}
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find item" aria-label="Find item"
+                  className="min-w-0 flex-1 bg-transparent text-base outline-none focus-visible:outline-none desk:text-[13px]" />
+              </label>
+              <Segmented ariaLabel="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'todo', label: 'Not counted' }]} />
             </div>
-            {!final && (
-              <p className="mt-2 text-xs text-muted">
-                Only finished counts are used, so a half-done sheet never moves your food cost.
-              </p>
+            <div className="hidden grid-cols-[minmax(0,1fr)_150px_100px] gap-4 border-b border-line bg-hover px-5 py-2.5 text-xs font-medium text-muted desk:grid">
+              <span>Item</span><span className="text-center">On shelf</span><span className="text-right">Value</span>
+            </div>
+
+            {visible.map(({ item, row, section }) => {
+              const loc = section.locationId
+              const split = loc ? splitOf(row) : null
+              const done = entered(row, loc)
+              const prev = previousLine.get(item.id)
+              // Last time's figure for this place when it was split then too, else the whole.
+              const was = loc && split && prev?.place_qty ? prev.place_qty[loc] : prev?.qty
+              const value = aud(countLineValue({ qty: qtyAt(row, split ? loc : null), unit_cost: row.unit_cost }))
+              return (
+                <div key={`${section.key}:${row.id}`}
+                  className="grid grid-cols-[minmax(0,1fr)_128px] items-center gap-3 border-b border-line-2 px-3.5 py-3 desk:grid-cols-[minmax(0,1fr)_150px_100px] desk:gap-4 desk:px-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border-[1.5px] ${done ? 'border-accent bg-accent text-accent-ink' : 'border-input-line'}`}>
+                      {done && <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium leading-tight desk:truncate">{item.name}</div>
+                      <div className="num text-xs text-muted">
+                        {q ? `${section.name} · ` : loc && item.group_id && groupName.has(item.group_id) ? `${groupName.get(item.group_id)} · ` : ''}
+                        {aud(row.unit_cost)}/{item.unit}
+                        {was != null && was > 0 && ` · was ${qtyStr(was)}`}
+                        <span className={`desk:hidden ${done ? 'font-semibold text-ink' : ''}`}> · {value}</span>
+                      </div>
+                      {split && (
+                        <div className="truncate text-xs text-accent">
+                          Also at {split.filter((l) => l !== loc).map((l) => locName.get(l)).join(', ')} · total {qtyStr(qtyOf(row))} {item.unit}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {final ? (
+                    <span className="num text-center text-sm text-ink-2">{qtyStr(qtyAt(row, split ? loc : null))} {item.unit}</span>
+                  ) : (
+                    <div className={`flex h-10 items-center overflow-hidden rounded-lg border bg-surface desk:h-9 ${done ? 'border-accent-tint-line' : 'border-input-line'}`}>
+                      <button type="button" aria-label={`One less ${item.name}`} onClick={() => step(row, loc, -1)}
+                        className="h-full w-10 border-r border-track text-base text-ink-2 hover:bg-hover desk:w-9">−</button>
+                      <input aria-label={`${item.name} quantity in ${item.unit}`} inputMode="decimal" placeholder="–"
+                        className="num h-full w-full min-w-0 flex-1 bg-transparent text-center text-[15px] font-semibold outline-none focus-visible:outline-none"
+                        value={shownStr(row, loc)} onChange={(e) => setDraft({ ...draft, [keyOf(row, loc)]: e.target.value })} />
+                      <button type="button" aria-label={`One more ${item.name}`} onClick={() => step(row, loc, 1)}
+                        className="h-full w-10 border-l border-track text-base text-ink-2 hover:bg-hover desk:w-9">+</button>
+                    </div>
+                  )}
+                  <span className={`num hidden text-right font-semibold desk:block ${done ? '' : 'text-faint'}`}>{value}</span>
+                </div>
+              )
+            })}
+            {visible.length === 0 && (
+              <p className="py-10 text-center text-muted">{q ? 'No items match your search.' : filter === 'todo' ? 'Everything on this shelf is counted.' : 'Nothing on this shelf.'}</p>
+            )}
+            {!q && (
+              <div className="flex items-center justify-between gap-3 px-3.5 py-3 desk:px-5">
+                <button type="button" className={outline} disabled={at === 0} onClick={() => go(at - 1)}>← {at > 0 ? sections[at - 1].name : 'Start'}</button>
+                <button type="button" className={outline} disabled={at >= sections.length - 1} onClick={() => go(at + 1)}>
+                  {at < sections.length - 1 ? sections[at + 1].name : 'Last shelf'} →
+                </button>
+              </div>
             )}
           </section>
         </div>
       )}
 
-      {/* Running total and Save stay in reach while you work down the shelves. */}
-      {!final && rows.length > 0 && (
-        <div className="fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom))] z-30 border-t border-line bg-surface/95 py-2 backdrop-blur md:bottom-0 md:pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-          <div className="mx-auto flex max-w-2xl items-center gap-3 px-4">
-            <span className="min-w-0 flex-1">
-              <span className="block text-xs text-muted">Stock on hand</span>
-              <span className="num block text-lg font-bold">{aud(total)}</span>
+      {rows.length > 0 && (
+        <section className="card mt-4 p-4 desk:p-5">
+          <label className="label" htmlFor="count-note">Note <span className="font-normal text-faint">(optional)</span></label>
+          <input id="count-note" className="field" defaultValue={count.note ?? ''} disabled={final}
+            placeholder="Who counted, anything odd…"
+            onBlur={(e) => e.target.value !== (count.note ?? '') && saveCount.mutate({ id: count.id, note: e.target.value || null })} />
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+            {final ? (
+              <button type="button" className="btn" disabled={saveCount.isPending} onClick={() => saveCount.mutate({ id: count.id, status: 'open' })}>
+                Reopen to change it
+              </button>
+            ) : (
+              <button type="button" className="btn btn-primary" disabled={saveCount.isPending || dirty.length > 0}
+                onClick={() => saveCount.mutate({ id: count.id, status: 'final' })}>
+                Finish this count
+              </button>
+            )}
+            {!final && dirty.length > 0 && <span className="text-xs text-muted">Save your changes first.</span>}
+            <span className="ml-auto">
+              <DeleteButton label="Delete count" busy={removeCount.isPending}
+                onConfirm={async () => { await removeCount.mutateAsync(count.id); nav('/stock') }} />
             </span>
-            <Flash signal={saved} />
-            <button type="button" className="btn btn-primary" disabled={!dirty.length || saveLines.isPending} onClick={save}>
-              {saveLines.isPending ? 'Saving…' : dirty.length ? `Save ${dirty.length}` : 'Saved'}
-            </button>
           </div>
+          {!final && <p className="mt-2 text-xs text-muted">Only finished counts are used, so a half-done sheet never moves your food cost.</p>}
+        </section>
+      )}
+
+      {/* Running total, progress and Save stay in reach while you work down the shelves. */}
+      {!final && rows.length > 0 && (
+        <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+64px)] z-10 -mx-4 mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line bg-surface/95 px-4 py-2.5 backdrop-blur desk:bottom-0 desk:-mx-8 desk:gap-6 desk:px-8 desk:py-3.5">
+          <div>
+            <div className="text-xs text-muted">Stock on hand</div>
+            <div className="num text-[22px] font-semibold tracking-[-0.02em]">{aud(total)}</div>
+          </div>
+          <div className="min-w-[100px] max-w-[360px] flex-1 desk:min-w-[180px]">
+            <div className="num flex justify-between text-xs text-muted"><span>Counted</span><span>{countedAll} of {rowsAll} items</span></div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-[3px] bg-track">
+              <div className="h-1.5 rounded-[3px] bg-accent" style={{ width: `${rowsAll ? (countedAll / rowsAll) * 100 : 0}%` }} />
+            </div>
+          </div>
+          <span className="ml-auto hidden text-xs text-muted desk:block">{dirty.length ? 'Unsaved changes' : 'All changes saved'}</span>
+          <button type="button" className={`btn h-10 px-[18px] ${dirty.length ? 'btn-primary' : 'btn-saved'}`} disabled={!dirty.length || saveLines.isPending} onClick={save}>
+            {saveLines.isPending ? 'Saving…' : dirty.length ? 'Save count' : 'Saved'}
+          </button>
         </div>
       )}
     </div>
+  )
+}
+
+/** The numbered circle for a shelf: filled teal once everything on it is counted. */
+function ShelfNumber({ n, done, size }: { n: number; done: boolean; size: number }) {
+  return (
+    <span style={{ width: size, height: size }}
+      className={`grid shrink-0 place-items-center rounded-full text-[11px] font-semibold ${done ? 'bg-accent text-accent-ink' : 'bg-surface-2 text-ink-2'}`}>
+      {n}
+    </span>
   )
 }

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useStartStockCount, useStockCounts, useStockItems } from '../lib/api'
 import { addDays, fmtDay, todayStr, weekdayIdx } from '../lib/dates'
 import { aud } from '../lib/format'
-import { Empty, ErrorBox, Loading, PageHeader } from '../components/ui'
+import { Empty, ErrorBox, Loading, PageHeader, Pill } from '../components/ui'
 
 /**
  * The obvious date to count: the end of the week just gone. A count is the stock on hand
@@ -32,8 +32,8 @@ export default function StockCounts() {
       />
       <ErrorBox error={counts.error || start.error} />
 
-      <section className="card mb-4 p-4">
-        <h2 className="font-semibold">Count the stock</h2>
+      <section className="card mb-4 p-4 desk:p-5">
+        <h2 className="text-base font-semibold">Count the stock</h2>
         <p className="mt-0.5 text-sm text-muted">
           Stock on hand at <strong>close of trade</strong> on the date you pick. Count after you shut on Sunday and leave the
           date as it is; count on Monday morning and it still belongs to Sunday.
@@ -75,17 +75,13 @@ export default function StockCounts() {
       ) : counts.data?.length === 0 ? (
         <Empty>No counts yet. The first one sets the opening stock for the week after it.</Empty>
       ) : (
-        <ul className="card divide-y divide-line">
+        <ul className="card divide-y divide-line-2 overflow-hidden">
           {counts.data!.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+            <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-hover desk:px-5">
               <Link to={`/stock/${c.id}`} className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{fmtDay(c.count_date)}</span>
-                  {c.status === 'open' && (
-                    <span className="rounded-full border border-warn-line bg-warn-bg px-2 py-0.5 text-xs font-semibold text-warn-ink">
-                      Still counting
-                    </span>
-                  )}
+                  {c.status === 'open' ? <Pill tone="warn">Still counting</Pill> : <Pill tone="success">Finished</Pill>}
                 </span>
                 <span className="mt-0.5 block text-xs text-muted">
                   {c.items_counted} {c.items_counted === 1 ? 'item' : 'items'} with stock

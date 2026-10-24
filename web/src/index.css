@@ -47,16 +47,16 @@
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
   --shadow-float: 0 12px 24px rgba(16, 24, 40, 0.12);
 
-  --c-sales: #2a78d6;
-  --c-cash: #86b6ef;   /* cash collected: a lighter step of the sales blue, never a category */
-  --c-expenses: #8a8880;
-  --c-profit: #0b0b0b;
-  --c-food: #eb6834;
-  --c-labour: #4a3aa7;
-  --c-rent: #1baf7a;
-  --c-utilities: #eda100;
-  --c-equipment: #e87ba4;
-  --c-other: #008300;
+  --c-sales: #0f766e;
+  --c-cash: #5fbfb2;   /* cash collected: a lighter step of the sales teal, never a category */
+  --c-expenses: #cbd2dc;
+  --c-profit: #101828;
+  --c-food: #0f766e;
+  --c-labour: #6172f3;
+  --c-rent: #0ba5ec;
+  --c-utilities: #f79009;
+  --c-equipment: #ee46bc;
+  --c-other: #98a2b3;
   --c-setup: #e34948;
 }
 
@@ -89,16 +89,16 @@
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-float: 0 12px 24px rgba(0, 0, 0, 0.45);
 
-    --c-sales: #3987e5;
-    --c-cash: #1c5cab;
-    --c-expenses: #8f8d85;
-    --c-profit: #ffffff;
-    --c-food: #d95926;
-    --c-labour: #9085e9;
-    --c-rent: #199e70;
-    --c-utilities: #c98500;
-    --c-equipment: #d55181;
-    --c-other: #008300;
+    --c-sales: #2eb8a8;
+    --c-cash: #1e7a70;
+    --c-expenses: #4b5565;
+    --c-profit: #f5f5f6;
+    --c-food: #2eb8a8;
+    --c-labour: #8098f9;
+    --c-rent: #36bffa;
+    --c-utilities: #fdb022;
+    --c-equipment: #f670c7;
+    --c-other: #85888e;
     --c-setup: #e66767;
   }
 }
@@ -131,16 +131,16 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-float: 0 12px 24px rgba(0, 0, 0, 0.45);
 
-  --c-sales: #3987e5;
-  --c-cash: #1c5cab;
-  --c-expenses: #8f8d85;
-  --c-profit: #ffffff;
-  --c-food: #d95926;
-  --c-labour: #9085e9;
-  --c-rent: #199e70;
-  --c-utilities: #c98500;
-  --c-equipment: #d55181;
-  --c-other: #008300;
+  --c-sales: #2eb8a8;
+  --c-cash: #1e7a70;
+  --c-expenses: #4b5565;
+  --c-profit: #f5f5f6;
+  --c-food: #2eb8a8;
+  --c-labour: #8098f9;
+  --c-rent: #36bffa;
+  --c-utilities: #fdb022;
+  --c-equipment: #f670c7;
+  --c-other: #85888e;
   --c-setup: #e66767;
 }
 

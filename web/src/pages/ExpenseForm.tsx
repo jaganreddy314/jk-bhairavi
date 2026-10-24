@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useExpense, useRemove, useSave, useStaff, useSuppliers } from '../lib/api'
 import { CAT_COLOR, CAT_LABEL, ENTRY_CATEGORIES, PAID_VIA } from '../lib/categories'
 import { todayStr } from '../lib/dates'
@@ -12,7 +12,16 @@ export default function ExpenseForm() {
   const { data, isLoading, error } = useExpense(id)
   const [savedCount, setSavedCount] = useState(0)
   const [lastSaved, setLastSaved] = useState(0)
-  const [prefill, setPrefill] = useState<Partial<Expense>>({})
+  // Links can preselect a category and date, e.g. the dashboard's "Add wages" for a week.
+  const [params] = useSearchParams()
+  const [prefill, setPrefill] = useState<Partial<Expense>>(() => {
+    const category = params.get('category') as CategoryCode | null
+    const date = params.get('date')
+    return {
+      ...(category && ENTRY_CATEGORIES.includes(category) ? { category } : {}),
+      ...(date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? { expense_date: date } : {}),
+    }
+  })
 
   if (id && isLoading) return <Loading />
   return (

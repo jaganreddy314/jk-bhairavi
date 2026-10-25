@@ -597,6 +597,16 @@ export interface PayRun {
 export interface XeroPushResult { name: string; status: 'sent' | 'updated' | 'skipped'; note?: string }
 export interface XeroConnection { business_id: string; tenant_id: string; tenant_name: string | null; connected_by: string | null; connected_at: string }
 export interface XeroRateMap { business_id: string; pay_label: string; earnings_rate_id: string; earnings_rate_name: string | null }
+export interface XeroImportCandidate {
+  id: string
+  name: string
+  email: string | null
+  start: string | null
+  status: 'active' | 'former'
+  /** Who they probably are in the app: already linked, same email, or same name. */
+  match: { staff_id: string; name: string; by: 'xero' | 'email' | 'name' } | null
+}
+export interface XeroImportResult { name: string; staff_id: string | null; status: 'created' | 'updated' | 'unchanged' | 'failed'; filled: string[]; notes: string[] }
 export interface XeroCatalog {
   employees: { id: string; name: string; calendar: string | null }[]
   earningsRates: { id: string; name: string; type: string; rateType: string }[]

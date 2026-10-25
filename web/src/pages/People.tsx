@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useAwards, usePayrollSettings, useSave, useStaff, useStaffReadiness } from '../lib/api'
+import { useAwards, usePayrollSettings, useSave, useStaff, useStaffReadiness, useXeroConnection } from '../lib/api'
 import { usePerms } from '../lib/access'
 import { todayStr } from '../lib/dates'
 import { aud, audRound, cents, parseMoney } from '../lib/format'
@@ -9,6 +9,7 @@ import type { EmploymentType, Staff } from '../lib/types'
 import { PersonAvatar, readinessOf, startsLater, usePayLookup } from '../components/people'
 import { PayrollSetup } from '../components/PayrollSetup'
 import { AccessTab } from '../components/AccessTab'
+import { XeroImport } from '../components/XeroImport'
 import { Drawer, ErrorBox, Field, Kpi, KPI_GRID, Loading, Pill, SearchBox, Segmented } from '../components/ui'
 
 type Tab = 'team' | 'setup' | 'access'
@@ -21,6 +22,8 @@ export default function People() {
   const raw = params.get('tab') as Tab | null
   const tab: Tab = tabs.some(([k]) => k === raw) ? raw! : tabs[0]?.[0] ?? 'team'
   const [adding, setAdding] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const xero = useXeroConnection()
 
   return (
     <div>
@@ -30,10 +33,13 @@ export default function People() {
           <p className="mt-1 text-sm text-muted">Everyone who works here, and what you need to pay them correctly.</p>
         </div>
         {tab === 'team' && can('payroll') && (
-          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M5 12h14M12 5v14" /></svg>
-            Add person
-          </button>
+          <div className="flex gap-2">
+            {xero.data && <button type="button" className="btn" onClick={() => setImporting(true)}>Import from Xero</button>}
+            <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M5 12h14M12 5v14" /></svg>
+              Add person
+            </button>
+          </div>
         )}
       </div>
       {tabs.length > 1 && (
@@ -53,6 +59,7 @@ export default function People() {
         {tab === 'access' && <AccessTab />}
       </div>
       {adding && <AddPerson onClose={() => setAdding(false)} />}
+      {importing && <XeroImport onClose={() => setImporting(false)} />}
     </div>
   )
 }

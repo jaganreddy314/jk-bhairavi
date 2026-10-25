@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
   Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
-  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroPushResult, XeroRateMap,
+  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
   StockBatch, StockLevel,
@@ -1018,6 +1018,27 @@ export const useXeroCatalog = (enabled: boolean) => {
     staleTime: 5 * 60_000,
     retry: false,
     queryFn: () => callFunction<XeroCatalog>('xero', { action: 'catalog', business_id: biz }),
+  })
+}
+
+/** Xero's employees, matched to people already here. Asked for only while the import is open. */
+export const useXeroImportPreview = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['xero_import_preview', biz],
+    queryFn: async () => (await callFunction<{ employees: XeroImportCandidate[] }>('xero', { action: 'import_preview', business_id: biz })).employees,
+    staleTime: 0,
+  })
+}
+
+export const useXeroImport = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (employees: { xero_id: string; staff_id: string | null }[]) =>
+      (await callFunction<{ results: XeroImportResult[] }>('xero', { action: 'import', business_id: biz, employees })).results,
+    onSettled: () => ['staff', 'staff_names', 'staff_readiness', 'staff_tax', 'staff_bank', 'staff_super', 'staff_leave', 'xero_import_preview']
+      .forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
   })
 }
 

@@ -524,7 +524,19 @@ export interface ItemSupplier {
 
 /** What the roster knows about a person: enough to cost and check shifts, nothing personal. */
 export type RosterPerson = Pick<Staff, 'id' | 'name' | 'first_name' | 'last_name' | 'kind' | 'status' | 'employment_type' | 'date_of_birth'
-  | 'award_code' | 'classification_id' | 'above_award' | 'ordinary_hours' | 'agreed_dows' | 'fortnight_hour_limit' | 'start_date' | 'end_date' | 'role_title'>
+  | 'award_code' | 'classification_id' | 'above_award' | 'ordinary_hours' | 'agreed_dows' | 'fortnight_hour_limit' | 'start_date' | 'end_date' | 'role_title'> & {
+  /** Where they sit on the roster: their position's group, then this order within it. */
+  position_id: string | null
+  roster_sort: number | null
+}
+
+/** A business's own list of jobs on a shift (Console, Driveway, Kitchen…), in roster order. */
+export interface RosterPosition {
+  id: string
+  business_id: string
+  name: string
+  sort: number
+}
 
 export interface Shift {
   id: string

@@ -5,7 +5,7 @@ import type {
   AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
   Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
-  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
+  StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterPosition, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
   StockBatch, StockLevel,
@@ -175,6 +175,7 @@ const DEPENDENTS: Record<string, string[]> = {
   pay_runs: ['pay_runs', 'pay_run'],
   pay_run_lines: ['pay_run'],
   staff_availability: ['staff_availability'],
+  roster_positions: ['roster_positions', 'roster_people'],
   partners: ['partners'],
   partner_contributions: ['partner_contributions'],
   setup_costs: ['setup_costs'],
@@ -836,6 +837,48 @@ export const useShifts = (from: string, to: string) => {
     queryFn: async () =>
       (await runAll((a, b) => supabase.from('shifts').select('*').eq('business_id', biz)
         .gte('shift_date', from).lte('shift_date', to).order('shift_date').order('start_minute').order('id').range(a, b))) as Shift[],
+  })
+}
+
+export const useRosterPositions = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['roster_positions', biz],
+    queryFn: async () => (await run(supabase.from('roster_positions').select('*').eq('business_id', biz).order('sort').order('name'))) as RosterPosition[],
+  })
+}
+
+/** Many positions at once, e.g. after moving one up the list. */
+export const useSaveRosterPositions = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rows: Pick<RosterPosition, 'id' | 'name' | 'sort'>[]) =>
+      run(supabase.from('roster_positions').upsert(rows.map((r) => ({ ...r, business_id: biz })))),
+    onSuccess: () => ['roster_positions', 'roster_people'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
+  })
+}
+
+/**
+ * Who sits where on the roster. The roster moves straight away and the save follows; if it
+ * fails, the list goes back to what's saved.
+ */
+export const useArrangeRoster = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  const key = ['roster_people', biz]
+  return useMutation({
+    mutationFn: (rows: { staff_id: string; position_id: string | null; sort: number }[]) =>
+      run(supabase.from('staff_roster').upsert(rows.map((r) => ({ ...r, business_id: biz })))),
+    onMutate: async (rows) => {
+      await qc.cancelQueries({ queryKey: key })
+      const before = qc.getQueryData<RosterPerson[]>(key)
+      const at = new Map(rows.map((r) => [r.staff_id, r]))
+      qc.setQueryData<RosterPerson[]>(key, (old) => old?.map((p) => at.has(p.id) ? { ...p, position_id: at.get(p.id)!.position_id, roster_sort: at.get(p.id)!.sort } : p))
+      return { before }
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.before) qc.setQueryData(key, ctx.before) },
+    onSettled: () => qc.invalidateQueries({ queryKey: key }),
   })
 }
 

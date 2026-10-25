@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
-  useAddShifts, useAvailability, usePayrollSettings, usePublicHolidays, usePublishWeek, useRemove, useRosterPeople, useRosterWeek,
-  useSales, useSave, useSavePayrollSettings, useShifts,
+  useAddShifts, useArrangeRoster, useAvailability, usePayrollSettings, usePublicHolidays, usePublishWeek, useRemove, useRosterPeople,
+  useRosterPositions, useRosterWeek, useSales, useSave, useSavePayrollSettings, useShifts,
 } from '../lib/api'
 import { usePerms } from '../lib/access'
 import { useBusiness } from '../lib/business'
@@ -13,6 +13,7 @@ import {
 } from '../lib/payroll'
 import type { PublicHoliday, RosterPerson, Shift, StaffAvailability } from '../lib/types'
 import { fmtDate, usePayLookup } from '../components/people'
+import { groupRoster, moveTo, PositionsDrawer } from '../components/RosterPositions'
 import { Drawer, ErrorBox, Field, Kpi, KPI_GRID, Loading, Pill } from '../components/ui'
 
 const fLong = new Intl.DateTimeFormat('en-AU', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' })
@@ -33,6 +34,8 @@ export default function Schedule() {
   const [ws, setWs] = useState(addDays(thisWeek, 7))
   const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
   const people = useRosterPeople()
+  const positions = useRosterPositions()
+  const arrange = useArrangeRoster()
   const shifts = useShifts(addDays(ws, -7), addDays(ws, 6))
   const week = useRosterWeek(ws)
   const avail = useAvailability()
@@ -46,9 +49,13 @@ export default function Schedule() {
   const [mDay, setMDay] = useState(0)
   const [toast, setToast] = useState('')
   const [hoursOpen, setHoursOpen] = useState(false)
+  const [positionsOpen, setPositionsOpen] = useState(false)
+  // Dragging someone on the roster: who, and the gap they'd drop into.
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [drop, setDrop] = useState<{ key: string; index: number } | null>(null)
   const edit = can('roster')
 
-  if (people.isLoading || shifts.isLoading || !pay.ready || settings.isLoading) return <Loading />
+  if (people.isLoading || shifts.isLoading || positions.isLoading || !pay.ready || settings.isLoading) return <Loading />
   const open = settings.data?.store_open ?? 360, close = settings.data?.store_close ?? 1320
   const region = settings.data?.holiday_region ?? 'QLD-BNE'
   const holidayOn = (d: string): PublicHoliday | null =>
@@ -61,6 +68,10 @@ export default function Schedule() {
   const roster = (people.data ?? []).filter((p) =>
     mine.some((s) => s.staff_id === p.id) || (p.status === 'active' && (!p.end_date || p.end_date >= ws)))
   const byId = new Map((people.data ?? []).map((p) => [p.id, p]))
+  // Grouped by position, in the order set for this business.
+  const groups = groupRoster(roster, positions.data ?? [])
+  const ordered = groups.flatMap((g) => g.people)
+  const grouped = (positions.data ?? []).length > 0
 
   // Each person's rates for the week (junior rates follow their age on the Monday).
   const ratesOf = new Map<string, PayRates | null>()
@@ -123,8 +134,16 @@ export default function Schedule() {
     setToast(`Roster published for ${peopleN} ${peopleN === 1 ? 'person' : 'people'}. Use “Copy roster” to send it to them.`)
   }
   async function copyText() {
-    await navigator.clipboard.writeText(rosterText(business?.name ?? '', ws, roster, mine))
+    await navigator.clipboard.writeText(rosterText(business?.name ?? '', ws, ordered, mine))
     setToast('Roster copied — paste it into your team chat, a text or an email.')
+  }
+  function dropHere() {
+    if (dragId && drop) {
+      const rows = moveTo(groups, dragId, drop.key, drop.index)
+      if (rows.length) arrange.mutate(rows)
+    }
+    setDragId(null)
+    setDrop(null)
   }
   const openNew = (staffId: string, day: number) => {
     const has = mine.some((s) => s.shift_date === days[day])
@@ -145,6 +164,7 @@ export default function Schedule() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {edit && <button type="button" className="btn h-[38px] font-medium" onClick={() => setPositionsOpen(true)}>Positions</button>}
           {mine.length > 0 && <button type="button" className="btn h-[38px] font-medium" onClick={copyText}>Copy roster</button>}
           {edit && <button type="button" className="btn h-[38px] font-medium" disabled={addShifts.isPending} onClick={copyLast}>Copy last week</button>}
           {edit && (
@@ -166,7 +186,7 @@ export default function Schedule() {
       </div>
 
       {toast && <div role="status" className="mt-3 rounded-[10px] border border-[#ABEFC6] bg-[#ECFDF3] px-3.5 py-2.5 text-sm text-[#067647] dark:border-[#085D3A] dark:bg-[#053321] dark:text-[#75E0A7]">{toast}</div>}
-      <div className="mt-3"><ErrorBox error={shifts.error || addShifts.error || publish.error} /></div>
+      <div className="mt-3"><ErrorBox error={shifts.error || addShifts.error || publish.error || arrange.error} /></div>
 
       <div className={`${KPI_GRID} mt-1`}>
         <Kpi label="Rostered hours" value={fmtHours(totH)} note={`${mine.length} shifts · ${peopleN} ${peopleN === 1 ? 'person' : 'people'}`} />
@@ -204,35 +224,61 @@ export default function Schedule() {
             <div className="flex items-end px-3.5 py-2.5 text-xs font-medium text-muted">Person</div>
             {dayInfo.map((d, i) => <DayHead key={d.d} d={d} i={i} />)}
           </div>
-          {roster.map((p) => {
-            const ps = mine.filter((s) => s.staff_id === p.id)
-            const h = ps.reduce((t, s) => t + hrs(s), 0)
-            const c = cents(ps.reduce((t, s) => t + (costOf(s)?.cost ?? 0), 0))
-            const pa = (avail.data ?? []).filter((a) => a.staff_id === p.id)
+          {groups.map((g) => {
+            if (!g.people.length && (!grouped || !edit || g.key === 'none')) return null
+            const gh = g.people.reduce((t, p) => t + mine.filter((s) => s.staff_id === p.id).reduce((u, s) => u + hrs(s), 0), 0)
             return (
-              <div key={p.id} className="grid grid-cols-[200px_repeat(7,minmax(108px,1fr))] border-b border-line-2">
-                <div className="flex min-w-0 items-center gap-2.5 px-3.5 py-2.5">
-                  <Initials p={p} size={32} />
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold">{p.name}</div>
-                    <div className="num truncate text-xs text-muted">{employmentLabel(p.employment_type)} · {fmtHours(h)} · {audRound(c)}</div>
+              <div key={g.key}>
+                {grouped && (
+                  <div className={`flex items-baseline gap-2 border-b border-line-2 bg-surface-2 px-3.5 py-1.5 ${drop?.key === g.key && !g.people.length ? 'shadow-[inset_0_0_0_2px_var(--accent)]' : ''}`}
+                    onDragOver={dragId ? (e) => { e.preventDefault(); setDrop({ key: g.key, index: 0 }) } : undefined}
+                    onDrop={dragId ? (e) => { e.preventDefault(); dropHere() } : undefined}>
+                    <span className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-2">{g.position?.name ?? 'No position'}</span>
+                    <span className="num text-xs text-muted">{g.people.length ? `${g.people.length} · ${fmtHours(gh)}` : edit ? 'Drag someone here' : ''}</span>
                   </div>
-                </div>
-                {days.map((d, i) => {
-                  const notYet = !!p.start_date && d < p.start_date
-                  const gone = !!p.end_date && d > p.end_date
-                  const av = pa.find((a) => a.dow === i + 1)
-                  const cs = ps.filter((s) => s.shift_date === d)
+                )}
+                {g.people.map((p, idx) => {
+                  const ps = mine.filter((s) => s.staff_id === p.id)
+                  const h = ps.reduce((t, s) => t + hrs(s), 0)
+                  const c = cents(ps.reduce((t, s) => t + (costOf(s)?.cost ?? 0), 0))
+                  const pa = (avail.data ?? []).filter((a) => a.staff_id === p.id)
                   return (
-                    <div key={d} className={`flex min-h-16 flex-col gap-1 border-l border-line-2 p-1.5 ${notYet || gone ? 'bg-[repeating-linear-gradient(135deg,var(--hover)_0_6px,var(--surface-2)_6px_12px)]' : av && !av.available ? 'bg-hover' : ''}`}>
-                      {cs.map((s) => <ShiftChip key={s.id} s={s} cost={costOf(s)?.cost ?? null} issue={issues(s)[0]} colour={colourOf(p.id)} onClick={edit ? () => setEditing(s) : undefined} />)}
-                      {edit && !notYet && !gone && (
-                        <button type="button" aria-label={`Add a shift for ${p.name} on ${fDay.format(toDate(d))}`} onClick={() => openNew(p.id, i)}
-                          className="min-h-7 flex-1 rounded-lg border border-dashed border-transparent text-base text-faint hover:border-input-line hover:bg-hover hover:text-ink-2">+</button>
-                      )}
-                      {!cs.length && (notYet && i === 0 ? <span className="px-1 text-[11px] text-faint">Starts {fmtShort(p.start_date!)}</span>
-                        : av && !av.available ? <span className="px-1 text-[11px] text-faint">{av.note || 'Not available'}</span>
-                        : av?.from_minute != null ? <span className="px-1 text-[11px] text-faint">After {fmtTime(av.from_minute)}</span> : null)}
+                    <div key={p.id} className={`grid grid-cols-[200px_repeat(7,minmax(108px,1fr))] border-b border-line-2 ${dragId === p.id ? 'opacity-40' : ''}`}
+                      style={{ boxShadow: drop?.key === g.key ? (drop.index === idx ? 'inset 0 2px 0 var(--accent)' : drop.index === idx + 1 && idx === g.people.length - 1 ? 'inset 0 -2px 0 var(--accent)' : undefined) : undefined }}
+                      onDragOver={dragId ? (e) => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setDrop({ key: g.key, index: idx + (e.clientY > r.top + r.height / 2 ? 1 : 0) }) } : undefined}
+                      onDrop={dragId ? (e) => { e.preventDefault(); dropHere() } : undefined}>
+                      <div className={`flex min-w-0 items-center gap-2.5 py-2.5 ${edit ? 'cursor-grab pl-1.5 pr-3.5 active:cursor-grabbing' : 'px-3.5'}`}
+                        draggable={edit} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.id); setDragId(p.id) }}
+                        onDragEnd={() => { setDragId(null); setDrop(null) }}>
+                        {edit && (
+                          <span aria-hidden className="shrink-0 text-faint">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></svg>
+                          </span>
+                        )}
+                        <Initials p={p} size={32} />
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-semibold">{p.name}</div>
+                          <div className="num truncate text-xs text-muted">{employmentLabel(p.employment_type)} · {fmtHours(h)} · {audRound(c)}</div>
+                        </div>
+                      </div>
+                      {days.map((d, i) => {
+                        const notYet = !!p.start_date && d < p.start_date
+                        const gone = !!p.end_date && d > p.end_date
+                        const av = pa.find((a) => a.dow === i + 1)
+                        const cs = ps.filter((s) => s.shift_date === d)
+                        return (
+                          <div key={d} className={`flex min-h-16 flex-col gap-1 border-l border-line-2 p-1.5 ${notYet || gone ? 'bg-[repeating-linear-gradient(135deg,var(--hover)_0_6px,var(--surface-2)_6px_12px)]' : av && !av.available ? 'bg-hover' : ''}`}>
+                            {cs.map((s) => <ShiftChip key={s.id} s={s} cost={costOf(s)?.cost ?? null} issue={issues(s)[0]} colour={colourOf(p.id)} onClick={edit ? () => setEditing(s) : undefined} />)}
+                            {edit && !notYet && !gone && (
+                              <button type="button" aria-label={`Add a shift for ${p.name} on ${fDay.format(toDate(d))}`} onClick={() => openNew(p.id, i)}
+                                className="min-h-7 flex-1 rounded-lg border border-dashed border-transparent text-base text-faint hover:border-input-line hover:bg-hover hover:text-ink-2">+</button>
+                            )}
+                            {!cs.length && (notYet && i === 0 ? <span className="px-1 text-[11px] text-faint">Starts {fmtShort(p.start_date!)}</span>
+                              : av && !av.available ? <span className="px-1 text-[11px] text-faint">{av.note || 'Not available'}</span>
+                              : av?.from_minute != null ? <span className="px-1 text-[11px] text-faint">After {fmtTime(av.from_minute)}</span> : null)}
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}
@@ -284,16 +330,17 @@ export default function Schedule() {
               </button>
             )
           })}
-          {edit && roster[0] && (
-            <button type="button" className="h-12 w-full font-semibold text-accent" onClick={() => openNew(roster[0].id, mDay)}>+ Add shift</button>
+          {edit && ordered[0] && (
+            <button type="button" className="h-12 w-full font-semibold text-accent" onClick={() => openNew(ordered[0].id, mDay)}>+ Add shift</button>
           )}
         </div>
       </div>
 
       {editing && (
-        <ShiftEditor key={editing.id ?? 'new'} shift={editing} days={days} people={roster} onClose={() => setEditing(null)}
+        <ShiftEditor key={editing.id ?? 'new'} shift={editing} days={days} people={ordered} onClose={() => setEditing(null)}
           costOf={costOf} issues={issues} />
       )}
+      {positionsOpen && <PositionsDrawer groups={groups} onClose={() => setPositionsOpen(false)} />}
       {hoursOpen && <StoreHours open={open} close={close} region={region} onClose={() => setHoursOpen(false)} />}
     </div>
   )

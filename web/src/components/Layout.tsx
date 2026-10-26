@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useBusiness } from '../lib/business'
 import { ALERT_PERMS, usePerms } from '../lib/access'
+import { useIsPlatformAdmin } from '../lib/api'
 import { AlertBadge } from './alerts'
 import type { Perm } from '../lib/types'
 
@@ -32,6 +33,7 @@ const GLYPH = {
   bell: <><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></>,
   calendar: <><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   banknote: <><rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></>,
+  building: <><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4M10 10h4M10 14h4M10 18h4" /></>,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
 }
 
@@ -81,6 +83,9 @@ const QUICK_ADD = [
   { to: '/expenses/new', label: 'Add expense', sub: 'Wages, rent, bills and more', glyph: '−', tone: 'bg-[#EEF4FF] text-[#444CE7] dark:bg-[#1F2A5C] dark:text-[#A4BCFD]', perms: ['finance'] as Perm[] },
   { to: '/orders/new', label: 'New purchase order', sub: 'Order from a supplier', glyph: '+', tone: 'bg-[#FFFAEB] text-[#DC6803] dark:bg-[#2B1E07] dark:text-[#FEC84B]', perms: ['purchasing'] as Perm[] },
 ]
+
+/** For the people who run the app, not a business: shown to platform admins only. */
+const PLATFORM: NavItem = { to: '/admin/businesses', label: 'Businesses', glyph: GLYPH.building, perms: [] }
 
 const isOn = (pathname: string, item: { to: string; end?: boolean }) =>
   item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + '/')
@@ -176,6 +181,7 @@ const GroupLabel = ({ children, first }: { children: ReactNode; first?: boolean 
 
 function Sidebar({ email }: { email?: string }) {
   const allowed = useAllowed()
+  const isAdmin = useIsPlatformAdmin().data
   return (
     <aside className="sticky top-0 hidden h-dvh flex-col gap-1 overflow-y-auto border-r border-line bg-surface px-3 py-4 desk:flex print:!hidden">
       <div className="px-2 pb-3.5 pt-1.5">
@@ -191,6 +197,12 @@ function Sidebar({ email }: { email?: string }) {
               {items.map((n) => <NavLink key={n.to} to={n.to} end={n.end} className={navClass}><Icon>{n.glyph}</Icon>{n.label}{n.badge}</NavLink>)}
             </div>
           ))}
+        {isAdmin && (
+          <div className="flex flex-col gap-1">
+            <GroupLabel>Platform</GroupLabel>
+            <NavLink to={PLATFORM.to} className={navClass}><Icon>{PLATFORM.glyph}</Icon>{PLATFORM.label}</NavLink>
+          </div>
+        )}
       </nav>
       <div className="mt-auto flex items-center gap-2.5 border-t border-line px-1.5 pt-3">
         <Avatar email={email} size={32} />
@@ -238,6 +250,7 @@ function PhoneChrome({ email }: { email?: string }) {
   const go = (to: string) => { setSheet(null); navigate(to) }
   const allowed = useAllowed()
   const { can } = usePerms()
+  const isAdmin = useIsPlatformAdmin().data
   const tabs = allowed(TABS)
   const quick = QUICK_ADD.filter((a) => can(...a.perms))
   const half = Math.ceil(tabs.length / 2)
@@ -284,7 +297,7 @@ function PhoneChrome({ email }: { email?: string }) {
             <span className="block text-xs text-muted">Your account and password</span>
           </span>
         </button>
-        {allowed([...OVERVIEW.slice(1), ALERTS, ...TEAM, ...MORE]).map((m) => (
+        {[...allowed([...OVERVIEW.slice(1), ALERTS, ...TEAM, ...MORE]), ...(isAdmin ? [PLATFORM] : [])].map((m) => (
           <button key={m.to} type="button" onClick={() => go(m.to)}
             className={`${sheetRow} font-medium ${isOn(pathname, m) ? 'text-accent' : 'text-ink-2'}`}>
             <Icon size={20}>{m.glyph}</Icon>

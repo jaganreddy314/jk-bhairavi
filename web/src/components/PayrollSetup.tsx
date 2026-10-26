@@ -3,7 +3,9 @@ import {
   useAwardClassifications, useAwardRates, useAwardRuleSets, useAwards, usePayrollSettings, useSaveAwardRate, useSavePayrollSettings,
   useStaff, useStaffReadiness,
 } from '../lib/api'
+import { useNavigate } from 'react-router-dom'
 import { usePerms } from '../lib/access'
+import { useBusiness } from '../lib/business'
 import { addDays, todayStr, weekStart } from '../lib/dates'
 import { aud, parseMoney } from '../lib/format'
 import { rateOn } from '../lib/payroll'
@@ -21,7 +23,9 @@ export function PayrollSetup() {
   const readiness = useStaffReadiness()
   const pay = usePayLookup()
   const { can } = usePerms()
-  const [editing, setEditing] = useState<'business' | 'cycle' | 'super' | null>(null)
+  const { business } = useBusiness()
+  const navigate = useNavigate()
+  const [editing, setEditing] = useState<'cycle' | 'super' | null>(null)
   const save = useSavePayrollSettings()
 
   if (settings.isLoading || awards.isLoading) return <Loading />
@@ -35,7 +39,7 @@ export function PayrollSetup() {
   const readyN = current.filter((p) => readinessOf(p, readiness.data?.find((r) => r.staff_id === p.id), pay.ratesFor(p)).ok).length
 
   const checks: [string, boolean, string][] = [
-    ['Business details and ABN', !!(s?.legal_name && s?.abn), s?.abn ? `ABN ${s.abn}` : 'Add your ABN and legal entity name'],
+    ['Business details and ABN', !!(business?.legal_name && business?.abn), business?.abn ? `ABN ${business.abn}` : 'Add your ABN and legal entity name'],
     ['Pay cycle', true, `${cap(s?.pay_frequency ?? 'weekly')}, Monday to Sunday, paid ${payDayName}`],
     ['Award and rates', !!award, award ? `${award.code} rates in place` : 'Choose the award this business uses'],
     ['Single Touch Payroll', s?.stp_status === 'connected', 'Report each pay to the ATO — set up with pay runs'],
@@ -48,10 +52,10 @@ export function PayrollSetup() {
     <div className="flex flex-wrap items-start gap-4">
       <div className="grid min-w-0 flex-[999_1_520px] gap-4">
         <ErrorBox error={settings.error || save.error} />
-        <SetupCard title="Business" sub="Shown on payslips and reported to the ATO." onEdit={can('payroll') ? () => setEditing('business') : undefined} rows={[
-          ['Legal entity name', s?.legal_name, 'Not added'],
-          ['ABN', s?.abn, 'Not added'],
-          ['Address', s?.address],
+        <SetupCard title="Business" sub="Shown on payslips and reported to the ATO. Edited in Settings." onEdit={can('admin') ? () => navigate('/settings#business') : undefined} rows={[
+          ['Legal entity name', business?.legal_name, 'Not added'],
+          ['ABN', business?.abn, 'Not added'],
+          ['Address', business?.address],
         ]} />
         <SetupCard title="Pay cycle" sub="Matches how the shop already runs: weeks are Monday to Sunday." onEdit={can('payroll') ? () => setEditing('cycle') : undefined} rows={[
           ['Frequency', cap(s?.pay_frequency ?? 'weekly')],
@@ -111,7 +115,6 @@ export function PayrollSetup() {
         <button type="button" className="btn mt-4 w-full" disabled title="Pay runs come in a later phase">Run first pay</button>
       </aside>
 
-      {editing === 'business' && s && <BusinessDrawer s={s} onClose={() => setEditing(null)} />}
       {editing === 'cycle' && s && <CycleDrawer s={s} onClose={() => setEditing(null)} />}
       {editing === 'super' && s && <SuperDrawer s={s} onClose={() => setEditing(null)} />}
     </div>
@@ -147,33 +150,6 @@ function SetupCard({ title, sub, rows, onEdit, note }: {
     </section>
   )
 }
-
-function BusinessDrawer({ s, onClose }: { s: PayrollSettings; onClose: () => void }) {
-  const save = useSavePayrollSettings()
-  const [v, setV] = useState({ legal_name: s.legal_name ?? '', abn: s.abn ?? '', address: s.address ?? '' })
-  const abnDigits = v.abn.replace(/\D/g, '')
-  const abnOk = !abnDigits || abnValid(abnDigits)
-  return (
-    <Drawer title="Business" onClose={onClose}
-      onSubmit={async () => { if (!abnOk) return; await save.mutateAsync({ legal_name: v.legal_name.trim() || null, abn: abnDigits ? formatAbn(abnDigits) : null, address: v.address.trim() || null }); onClose() }}
-      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={!abnOk || save.isPending}>Save</button></>}>
-      <ErrorBox error={save.error} />
-      <Field label="Legal entity name" hint="The company, trust or sole trader that employs the staff."><input className="field" value={v.legal_name} onChange={(e) => setV({ ...v, legal_name: e.target.value })} /></Field>
-      <Field label="ABN" hint={abnOk ? '11 digits, checked as you type.' : <span className="text-bad">That isn't a valid ABN.</span>}>
-        <input className="field num" inputMode="numeric" value={v.abn} onChange={(e) => setV({ ...v, abn: e.target.value })} placeholder="12 345 678 901" />
-      </Field>
-      <Field label="Address"><input className="field" value={v.address} onChange={(e) => setV({ ...v, address: e.target.value })} /></Field>
-    </Drawer>
-  )
-}
-
-/** The ATO's ABN check: subtract 1 from the first digit, weight, and the sum divides by 89. */
-function abnValid(d: string) {
-  if (!/^\d{11}$/.test(d)) return false
-  const w = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
-  return [...d].reduce((s, c, i) => s + (Number(c) - (i === 0 ? 1 : 0)) * w[i], 0) % 89 === 0
-}
-const formatAbn = (d: string) => `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 8)} ${d.slice(8)}`
 
 function CycleDrawer({ s, onClose }: { s: PayrollSettings; onClose: () => void }) {
   const save = useSavePayrollSettings()

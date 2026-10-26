@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  useChangeMyPassword, useCreateBusiness, useContributions, usePartners, useSaveBusiness, useSetupCosts,
+  useChangeMyPassword, useContributions, useIsPlatformAdmin, usePartners, useSaveBusiness, useSetupCosts,
 } from '../lib/api'
 import { useBusiness } from '../lib/business'
 import { aud, cents } from '../lib/format'
+import type { Business } from '../lib/types'
+import { DetailsFields, draftOf, draftProblems, draftToRow, SalesFields, type BusinessDraft } from '../components/BusinessForm'
 import { TableEditor } from '../components/TableEditor'
-import { ErrorBox, Flash, Loading, PageHeader, Segmented } from '../components/ui'
+import { ErrorBox, Flash, Loading, PageHeader } from '../components/ui'
 
 function Section({ title, hint, children, id }: { title: string; hint?: ReactNode; children: ReactNode; id: string }) {
   return (
@@ -89,88 +91,57 @@ export default function Settings() {
   )
 }
 
-/** Rename this business, manage who can open it, and start another one. */
+/** The business's name and details, and how its sales are entered. */
 function BusinessSection() {
-  // Remount on switch so the name box and half-typed forms belong to the business on screen.
+  // Remount on switch so the form holds the business on screen, never the last one's edits.
   const { business } = useBusiness()
-  return <BusinessFields key={business?.id} />
+  return business ? <BusinessFields key={business.id} business={business} /> : null
 }
 
-function BusinessFields() {
-  const { business, businesses, setBusinessId } = useBusiness()
-  const saveBusiness = useSaveBusiness()
-  const createBusiness = useCreateBusiness()
-  const [name, setName] = useState(business?.name ?? '')
-  const [newBiz, setNewBiz] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [error, setError] = useState<unknown>(null)
-  async function addBusiness(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    try {
-      const created = await createBusiness.mutateAsync(newBiz)
-      setNewBiz('')
-      setAdding(false)
-      setBusinessId(created.id)
-    } catch (err) {
-      setError(err)
-    }
-  }
+function BusinessFields({ business }: { business: Business }) {
+  const { businesses } = useBusiness()
+  const isAdmin = useIsPlatformAdmin().data
+  const save = useSaveBusiness()
+  const [d, setD] = useState<BusinessDraft>(() => draftOf(business))
+  const [saved, setSaved] = useState(0)
+  const set = (patch: Partial<BusinessDraft>) => setD((v) => ({ ...v, ...patch }))
+  const p = draftProblems(d)
+  const dirty = JSON.stringify(draftToRow(d)) !== JSON.stringify(draftToRow(draftOf(business)))
+  const ok = !p.name && !p.abn && !p.email
 
   return (
-    <Section id="business" title="Business" hint="Everything on the other pages belongs to the business shown in the header.">
-      <ErrorBox error={error || saveBusiness.error} />
-
-      <form
-        className="flex flex-wrap items-end gap-2"
-        onSubmit={(e) => { e.preventDefault(); if (business && name.trim()) saveBusiness.mutate({ id: business.id, name: name.trim() }) }}
-      >
-        <div className="min-w-48 flex-1">
-          <label className="label" htmlFor="biz-name">Name</label>
-          <input id="biz-name" className="field" value={name} onChange={(e) => setName(e.target.value)} />
+    <Section id="business" title="Business" hint="Shown across the app, and on payslips with the ABN.">
+      <form className="mt-2 grid gap-6" onSubmit={async (e) => {
+        e.preventDefault()
+        if (!ok || !dirty) return
+        await save.mutateAsync({ id: business.id, ...draftToRow(d) })
+        setSaved(Date.now())
+      }}>
+        <DetailsFields d={d} set={set} />
+        <div className="border-t border-line pt-5">
+          <SalesFields d={d} set={set} />
+          <p className="mt-1.5 text-xs text-muted">Changing how sales are entered only changes the entry screen. Figures already saved stay as they are.</p>
         </div>
-        <button className="btn" disabled={!name.trim() || name.trim() === business?.name || saveBusiness.isPending}>Rename</button>
+        <ErrorBox error={save.error} />
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn btn-primary" disabled={!ok || !dirty || save.isPending}>{save.isPending ? 'Saving…' : 'Save changes'}</button>
+          {dirty && <button type="button" className="btn" onClick={() => setD(draftOf(business))}>Discard</button>}
+          <Flash signal={saved}>Saved</Flash>
+        </div>
       </form>
 
-      <h3 className="mt-5 font-semibold">How a day’s sales are recorded</h3>
-      <p className="mb-2 text-sm text-muted">
-        {business?.sales_mode === 'simple'
-          ? 'Two figures a day: total sales, and the cash collected (fuel money included, never counted as sales).'
-          : 'Four figures a day — card, cash, Uber and online — added up to the day’s takings.'}
-      </p>
-      <Segmented
-        ariaLabel="How a day’s sales are recorded"
-        value={business?.sales_mode ?? 'channels'}
-        onChange={(v) => business && v !== business.sales_mode && saveBusiness.mutate({ id: business.id, sales_mode: v })}
-        options={[
-          { value: 'channels', label: 'Card / cash / Uber / online' },
-          { value: 'simple', label: 'Total sales + cash collected' },
-        ]}
-      />
-      <p className="mt-1.5 text-xs text-muted">Changing this only changes the entry screen. Figures already saved stay as they are.</p>
-
-      <p className="mt-5 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-2">
-        Who can sign in, and what each person can open, is in{' '}
-        <Link className="font-semibold text-accent" to="/people?tab=access">People → Access</Link>.
-      </p>
-
-      <h3 className="mt-5 font-semibold">Other businesses</h3>
-      <p className="mb-2 text-sm text-muted">
-        You can open {businesses.length === 1 ? 'one business' : `${businesses.length} businesses`}: {businesses.map((b) => b.name).join(', ')}.
-      </p>
-      {adding ? (
-        <form className="flex flex-wrap items-end gap-2" onSubmit={addBusiness}>
-          <div className="min-w-48 flex-1">
-            <label className="label" htmlFor="new-biz">New business name</label>
-            <input id="new-biz" className="field" value={newBiz} onChange={(e) => setNewBiz(e.target.value)} placeholder="Second shop" autoFocus />
-          </div>
-          <button className="btn btn-primary" disabled={!newBiz.trim() || createBusiness.isPending}>{createBusiness.isPending ? 'Creating…' : 'Create'}</button>
-          <button type="button" className="btn" onClick={() => { setAdding(false); setNewBiz('') }}>Cancel</button>
-        </form>
-      ) : (
-        <button type="button" className="btn btn-sm" onClick={() => setAdding(true)}>+ Add another business</button>
-      )}
-      <p className="mt-2 text-xs text-muted">A new business starts empty, with you as its only member. Switch between businesses in the header.</p>
+      <div className="mt-6 grid gap-2 border-t border-line pt-4 text-sm text-ink-2">
+        <p>
+          Who can sign in, and what each person can open, is in{' '}
+          <Link className="font-semibold text-accent" to="/people?tab=access">People → Access</Link>.
+        </p>
+        {businesses.length > 1 && (
+          <p>You can open {businesses.length} businesses: {businesses.map((b) => b.name).join(', ')}. Switch between them at the top of the menu.</p>
+        )}
+        {isAdmin && (
+          <p>New businesses are set up from <Link className="font-semibold text-accent" to="/admin/businesses">Businesses</Link>.</p>
+        )}
+      </div>
     </Section>
   )
 }

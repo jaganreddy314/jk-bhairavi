@@ -55,5 +55,8 @@ export function useBusiness() {
   return ctx
 }
 
+/** For pages that also open with no business chosen (a platform admin who belongs to none). */
+export const useOptionalBusiness = () => useContext(BusinessContext)
+
 /** The id every query and insert is scoped to. */
 export const useBusinessId = () => useBusiness().businessId

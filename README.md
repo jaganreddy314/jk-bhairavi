@@ -85,7 +85,13 @@ dashboard under Authentication → Users.
 - `business_users` lists, per business, the email addresses that may open it. Order and count *lines* get their business from their parent order or count through a database trigger, not from the browser, so lines can't be hung off another business's records. Everything else is enforced by the database: each table only returns rows whose business you belong to, so nobody can reach another business's figures even outside the app.
 - Anyone can request a sign-in link, but an address that isn't in `business_users` lands on a "No access yet" screen and can read nothing.
 - People are added and removed in **Settings → Business**. Anyone with access to a business can add others to it. A business always keeps at least one person.
-- **Add another business** in Settings creates an empty business with you as its only member. Existing data is untouched.
+- **New businesses are set up by platform admins** (the `platform_admins` table) from **Businesses** in the menu: a four-step wizard records the business's details, how its sales are entered and its owner, then gives the owner a login with a temporary password to send them. The owner chooses their own password at first sign-in and adds their own team in People → Access. Platform admins see the list of every business, but not a business's figures unless they're one of its people. Logins need the service-role key, so they're made by the `setup-owner-login` Edge Function:
+
+  ```bash
+  supabase functions deploy setup-owner-login --use-api --project-ref <ref>
+  ```
+
+  To make someone else a platform admin: `insert into platform_admins (email) values ('them@example.com');`
 
 ## Setup
 

@@ -81,10 +81,10 @@ Deno.serve(async (req) => {
 
   const [{ data: settings }, { data: biz }, { data: lines }] = await Promise.all([
     admin.from('payroll_settings').select('*').eq('business_id', run.business_id).single(),
-    admin.from('businesses').select('name').eq('id', run.business_id).single(),
+    admin.from('businesses').select('name, legal_name, abn, address').eq('id', run.business_id).single(),
     admin.from('pay_run_lines').select('id, staff_id, result, staff(name, email)').eq('pay_run_id', payRunId),
   ])
-  if (!settings?.legal_name || !settings?.abn) return reply({ error: 'Add the business’s legal name and ABN in Payroll setup first — payslips must show them.' }, 400)
+  if (!biz?.legal_name || !biz?.abn) return reply({ error: 'Add the business’s legal name and ABN in Settings first — payslips must show them.' }, 400)
 
   const period = `${day(run.period_start)} – ${day(run.period_end)}`
   const sent: string[] = []
@@ -98,8 +98,8 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${RESEND}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: FROM, to: [s.email], reply_to: settings.payslip_reply_to || undefined,
-        subject: `Your payslip · ${biz?.name ?? settings.legal_name} · ${period}`,
-        html: payslipHtml({ employer: settings.legal_name, abn: settings.abn, address: settings.address ?? '', period, paid: day(run.pay_date), result: l.result ?? {} }),
+        subject: `Your payslip · ${biz.name} · ${period}`,
+        html: payslipHtml({ employer: biz.legal_name, abn: biz.abn, address: biz.address ?? '', period, paid: day(run.pay_date), result: l.result ?? {} }),
       }),
     })
     if (!res.ok) { skipped.push({ name: s.name, reason: `email service said ${res.status}: ${(await res.text()).slice(0, 160)}` }); continue }

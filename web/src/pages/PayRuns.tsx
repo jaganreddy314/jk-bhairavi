@@ -12,6 +12,7 @@ import { WITHHOLDING_SOURCE, type Frequency } from '../lib/withholding'
 import type { PayRun, Staff, XeroPushResult } from '../lib/types'
 import { abaFile, bsbOk } from '../lib/aba'
 import { usePerms } from '../lib/access'
+import { useBusiness } from '../lib/business'
 import { fmtDate, PersonAvatar, usePayLookup } from '../components/people'
 import { DeleteButton, Empty, ErrorBox, Field, Kpi, KPI_GRID, Loading, PageHeader, Pill } from '../components/ui'
 
@@ -400,21 +401,21 @@ function LineDetail({ run, row, draft }: { run: PayRun; row: Row; draft: boolean
 export function Payslips() {
   const { id } = useParams()
   const run = usePayRun(id)
-  const settings = usePayrollSettings()
+  const { business } = useBusiness()
   const leave = useAllLeave()
   const only = new URLSearchParams(location.search).get('staff')
-  if (run.isLoading || settings.isLoading) return <Loading />
+  if (run.isLoading) return <Loading />
   const r = run.data
   if (!r || r.status !== 'finalised') return <div className="card mx-auto mt-10 max-w-md p-6 text-center text-muted">Payslips are made when a pay run is finalised.</div>
   const lines = (r.pay_run_lines ?? []).filter((l) => !only || l.staff_id === only)
-  const s = settings.data
+  const s = business
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Link to={`/pay-runs/${r.id}`} className="text-[13px] font-medium text-ink-2 hover:text-ink">‹ Pay run · {periodLabel(r)}</Link>
         <button type="button" className="btn btn-primary" onClick={() => window.print()}>Print or save as PDF</button>
       </div>
-      {(!s?.legal_name || !s?.abn) && <p className="mt-3 rounded-[10px] bg-warn-bg px-3 py-2 text-sm text-warn-ink print:hidden">Payslips must show your business name and ABN — add them in People → Payroll setup.</p>}
+      {(!s?.legal_name || !s?.abn) && <p className="mt-3 rounded-[10px] bg-warn-bg px-3 py-2 text-sm text-warn-ink print:hidden">Payslips must show your business’s legal name and ABN — add them in Settings → Business.</p>}
       {lines.map((l) => {
         const res = l.result!
         const bal = (t: string) => leave.data?.find((x) => x.staff_id === l.staff_id && x.leave_type === t)?.hours

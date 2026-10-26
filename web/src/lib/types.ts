@@ -6,9 +6,34 @@ export type SalesMode = 'channels' | 'simple'
 
 export interface Business {
   id: string
+  /** The trading name: what the shop is called, shown everywhere in the app. */
   name: string
   sales_mode: SalesMode
+  /** The company, trust or sole trader behind it. Shown on payslips with the ABN. */
+  legal_name: string | null
+  abn: string | null
+  address: string | null
+  phone: string | null
+  email: string | null
+  gst_registered: boolean
+  /** Which till or POS the shop uses, for importing its sales reports. */
+  till_system: string | null
   created_at?: string
+  created_by?: string | null
+}
+
+/** A row of the platform admin's list of every business. */
+export interface AdminBusiness {
+  id: string
+  name: string
+  legal_name: string | null
+  abn: string | null
+  created_at: string
+  created_by: string | null
+  owners: string[]
+  members: number
+  last_sales: string | null
+  i_am_member: boolean
 }
 
 export interface BusinessUser {
@@ -158,9 +183,6 @@ export interface AwardRate {
 
 export interface PayrollSettings {
   business_id: string
-  legal_name: string | null
-  abn: string | null
-  address: string | null
   pay_frequency: 'weekly' | 'fortnightly' | 'monthly'
   period_start_dow: number
   pay_day_offset: number

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { useBusinessId } from './business'
 import type {
-  AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
+  AdminBusiness, AnyExpense, Business, BusinessUser, Expense, ExpenseCategory, ItemCost, Partner, PartnerContribution,
   PurchaseOrder, PurchaseOrderLine, PurchaseOrderTotal, RecurringExpense, SalesDay, SetupCost, Staff, StaffName,
   Award, AwardClassification, AwardRate, AwardRuleSet, PayrollSettings, SecurityGroup, StaffBank, StaffLeave,
   StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterPosition, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
@@ -272,8 +272,9 @@ export const useUpsertSales = () => {
 
 // ---------- businesses & their people ----------
 
+/** The business's name and details. Needs Settings and access. */
 export const useSaveBusiness = () =>
-  useWrite<{ id: string; name?: string; sales_mode?: string }>('businesses', ({ id, ...rest }) =>
+  useWrite<{ id: string } & Partial<Omit<Business, 'id' | 'created_at' | 'created_by'>>>('businesses', ({ id, ...rest }) =>
     supabase.from('businesses').update(rest).eq('id', id),
   )
 
@@ -291,18 +292,61 @@ export const useRemovePerson = () => {
   )
 }
 
+// ---------- platform admin ----------
+
+/** Can this person create businesses for customers? Decided by the database, not the browser. */
+export const useIsPlatformAdmin = () =>
+  useQuery({
+    queryKey: ['is_platform_admin'],
+    queryFn: async () => (await run<boolean>(supabase.rpc('is_platform_admin'))) === true,
+    staleTime: Infinity,
+  })
+
+/** Every business, with its owners and when it last had sales entered. Platform admins only. */
+export const useAdminBusinesses = () =>
+  useQuery({
+    queryKey: ['admin_businesses'],
+    queryFn: async () => (await run(supabase.rpc('admin_businesses'))) as AdminBusiness[],
+  })
+
+export interface NewBusiness {
+  name: string
+  owner_email: string
+  details: {
+    legal_name?: string | null; abn?: string | null; address?: string | null; phone?: string | null; email?: string | null
+    gst_registered: boolean; sales_mode: Business['sales_mode']; till_system?: string | null; owner_name?: string | null
+  }
+  /** Also put the admin in the Owner group, to help set it up. */
+  join: boolean
+}
+
 /**
- * Creating a business returns it, so the caller can switch to it straight away.
- * The list of businesses is refreshed before this resolves, so the new one is
- * already known to the switcher by the time we select it.
+ * Creating a business returns it, so the caller can open it straight away when they joined.
+ * The list of businesses is refreshed before this resolves, so the new one is already known
+ * to the switcher by the time it's selected.
  */
 export const useCreateBusiness = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (name: string) => run<Business>(supabase.rpc('create_business', { p_name: name.trim() })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['businesses'] }),
+    mutationFn: (v: NewBusiness) => run<Business>(supabase.rpc('create_business', {
+      p_name: v.name.trim(), p_owner_email: v.owner_email.trim().toLowerCase(), p_details: v.details, p_join: v.join,
+    })),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['businesses'] }),
+      qc.invalidateQueries({ queryKey: ['admin_businesses'] }),
+    ]),
   })
 }
+
+/**
+ * The owner's login. A new owner gets a temporary password to pass on, and chooses their
+ * own the first time they sign in; someone who already has a login keeps it (`existing`).
+ */
+export const useSetupOwnerLogin = () =>
+  useMutation({
+    mutationFn: (v: { business_id: string; email: string }) =>
+      callFunction<{ ok: boolean; existing: boolean; email: string; password?: string }>('setup-owner-login', v),
+  })
 
 // ---------- purchasing & stock ----------
 

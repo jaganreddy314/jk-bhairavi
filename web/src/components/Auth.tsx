@@ -28,6 +28,8 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
   if (session === undefined) return <Loading />
   if (!session) return <SignIn />
   if (recovering) return <ChooseNewPassword onDone={() => setRecovering(false)} />
+  // A new owner signing in with the temporary password they were sent.
+  if (session.user.user_metadata?.needs_password) return <ChooseNewPassword welcome onDone={() => { /* the session update re-renders */ }} />
   return <>{children(session)}</>
 }
 
@@ -152,8 +154,8 @@ function SignIn() {
   )
 }
 
-/** Shown when a password-reset link brings someone back. */
-function ChooseNewPassword({ onDone }: { onDone: () => void }) {
+/** Shown when a password-reset link brings someone back, or a new owner first signs in. */
+function ChooseNewPassword({ onDone, welcome }: { onDone: () => void; welcome?: boolean }) {
   const [password, setPassword] = useState('')
   const [again, setAgain] = useState('')
   const [busy, setBusy] = useState(false)
@@ -164,15 +166,19 @@ function ChooseNewPassword({ onDone }: { onDone: () => void }) {
   return (
     <Centered>
       <Branding />
-      <h2 className="mb-1 font-semibold">Choose a new password</h2>
-      <p className="mb-3 text-sm text-muted">At least 8 characters. You'll stay signed in on this device afterwards.</p>
+      <h2 className="mb-1 font-semibold">{welcome ? 'Welcome — choose your password' : 'Choose a new password'}</h2>
+      <p className="mb-3 text-sm text-muted">
+        {welcome ? 'Replace the temporary password you were sent with one only you know. ' : ''}
+        At least 8 characters. You'll stay signed in on this device afterwards.
+      </p>
       <form
         onSubmit={async (e) => {
           e.preventDefault()
           if (tooShort || mismatch || !password) return
           setBusy(true)
           setError(null)
-          const { error } = await supabase.auth.updateUser({ password })
+          // Clearing needs_password fires USER_UPDATED, which takes a new owner on into the app.
+          const { error } = await supabase.auth.updateUser({ password, data: { needs_password: false } })
           setBusy(false)
           if (error) setError(error)
           else onDone()

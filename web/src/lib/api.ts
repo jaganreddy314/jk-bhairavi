@@ -350,7 +350,37 @@ export const useSetupOwnerLogin = () =>
 
 // ---------- purchasing & stock ----------
 
-export const useStockGroups = scopedTable<StockGroup>('stock_groups', 'sort', ['min_stock'])
+/** Every category row as stored, departments included: for editing the list itself. */
+export const useStockGroupRows = scopedTable<StockGroup>('stock_groups', 'sort', ['min_stock'])
+
+/**
+ * The categories products go in, in count-sheet order. Where a shop uses departments, those
+ * only group other categories, so they're left out; each category carries its department's
+ * name and sorts within it (Drinks' categories, then Confectionery's…). A shop without
+ * departments gets its categories exactly as stored.
+ */
+export const useStockGroups = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['stock_groups', biz],
+    queryFn: async () =>
+      money(await runAll((a, b) => supabase.from('stock_groups').select('*').eq('business_id', biz).order('sort').order('id').range(a, b)), ['min_stock'] as never[]) as StockGroup[],
+    select: categoriesOf,
+  })
+}
+
+function categoriesOf(rows: StockGroup[]): StockGroup[] {
+  const byId = new Map(rows.map((g) => [g.id, g]))
+  const departments = new Set(rows.map((g) => g.parent_id).filter(Boolean))
+  return rows
+    .filter((g) => !departments.has(g.id))
+    .map((g) => {
+      const dept = g.parent_id ? byId.get(g.parent_id) : undefined
+      // Departments' order first, then the category's inside it; sorts stay well under 10,000.
+      return { ...g, parent_name: dept?.name ?? null, sort: (dept ? dept.sort : g.sort) * 10000 + (dept ? g.sort : 0) }
+    })
+    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
+}
 export const useStockItems = scopedTable<StockItem>('stock_items', 'name', ['unit_cost', 'min_stock'])
 export const useStockLocations = scopedTable<StockLocation>('stock_locations', 'sort')
 

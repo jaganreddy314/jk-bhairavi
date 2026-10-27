@@ -338,6 +338,10 @@ export interface StockGroup {
   min_stock: number | null
   /** Days before expiry its products go on clearance. A product's own wins; else a week. */
   clearance_days: number | null
+  /** The department this category sits in (Drinks for Energy Drinks), if the shop uses them. */
+  parent_id: string | null
+  /** Filled in by useStockGroups: the department's name, for headings and labels. */
+  parent_name?: string | null
 }
 
 export interface StockItem {

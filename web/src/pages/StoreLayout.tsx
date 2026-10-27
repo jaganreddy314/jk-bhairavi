@@ -5,6 +5,7 @@ import {
 } from '../lib/api'
 import { layout, shelfOrder, walkOrder, type Layout } from '../lib/layout'
 import type { StockGroup, StockItem, StockLocation, StockLocationGroup } from '../lib/types'
+import { categoryLabel } from '../components/catalogue'
 import { DeleteButton, ErrorBox, Loading } from '../components/ui'
 
 /** A long list of ids in one request would overflow the URL, so big moves go in batches. */
@@ -60,11 +61,11 @@ function LocationList({ locations, items, groups, links, lay, onOpen, error }: S
   const save = useSave('stock_locations')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
-  const groupName = new Map(groups.map((g) => [g.id, g.name]))
+  const groupName = new Map(groups.map((g) => [g.id, categoryLabel(g)]))
   const countAt = (id: string) => items.filter((i) => lay.placesOf(i.id).includes(id)).length
   const unplaced = items.filter((i) => lay.placesOf(i.id).length === 0)
   const unplacedByGroup = [...groups, null]
-    .map((g) => ({ name: g?.name ?? 'No category', n: unplaced.filter((i) => (g ? i.group_id === g.id : !i.group_id)).length }))
+    .map((g) => ({ name: g ? categoryLabel(g) : 'No category', n: unplaced.filter((i) => (g ? i.group_id === g.id : !i.group_id)).length }))
     .filter((x) => x.n > 0)
 
   async function add() {
@@ -152,7 +153,7 @@ function LocationEditor({ location, locations, items, groups, links, lay, onClos
   const [adding, setAdding] = useState(false)
 
   const here = links.filter((l) => l.location_id === location.id).sort((a, b) => a.sort - b.sort)
-  const groupName = new Map(groups.map((g) => [g.id, g.name]))
+  const groupName = new Map(groups.map((g) => [g.id, categoryLabel(g)]))
   const locName = new Map(locations.map((l) => [l.id, l.name]))
   const elsewhere = (groupId: string) => links.filter((l) => l.group_id === groupId && l.location_id !== location.id).map((l) => locName.get(l.location_id)).filter(Boolean)
   const products = items.filter((i) => lay.placesOf(i.id).includes(location.id))
@@ -199,7 +200,7 @@ function LocationEditor({ location, locations, items, groups, links, lay, onClos
           <option value="">+ Add a category…</option>
           {[...groups].sort((a, b) => a.sort - b.sort).filter((g) => !here.some((l) => l.group_id === g.id)).map((g) => {
             const at = elsewhere(g.id)
-            return <option key={g.id} value={g.id}>{g.name}{at.length ? ` (also at ${at.join(', ')})` : ''}</option>
+            return <option key={g.id} value={g.id}>{categoryLabel(g)}{at.length ? ` (also at ${at.join(', ')})` : ''}</option>
           })}
         </select>
       </div>
@@ -316,7 +317,7 @@ function ShelfOrder({ location, products, links, groups, others, lay, locName, a
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [dragging, setDragging] = useState<string | null>(null)
   const byId = new Map(products.map((i) => [i.id, i]))
-  const groupName = new Map(groups.map((g) => [g.id, g.name]))
+  const groupName = new Map(groups.map((g) => [g.id, categoryLabel(g)]))
   const arranged = products.some((i) => lay.sortAt(i.id, location.id) > 0)
   const changed = !arranged || ids.some((id, n) => id !== saved[n].id)
 

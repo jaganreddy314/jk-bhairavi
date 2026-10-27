@@ -34,20 +34,36 @@ export function FoodHeader({ sub, action }: { sub: string; action?: ReactNode })
 export const NO_SECTION = 'none'
 export const sectionKey = (i: StockItem) => i.group_id ?? NO_SECTION
 
-export interface Section { key: string; label: string; items: StockItem[] }
+export interface Section { key: string; label: string; items: StockItem[]; department?: string | null; departmentId?: string | null }
 
 /** Items split by section, in count-sheet order, sorted by name inside. Empty sections are left out. */
 export function bySection(items: StockItem[], groups: StockGroup[], order: (a: StockItem, b: StockItem) => number = byName): Section[] {
   const sorted = [...items].sort(order)
   const out: Section[] = [...groups]
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
-    .map((g) => ({ key: g.id, label: g.name, items: sorted.filter((i) => i.group_id === g.id) }))
+    .map((g) => ({ key: g.id, label: g.name, department: g.parent_name, departmentId: g.parent_id, items: sorted.filter((i) => i.group_id === g.id) }))
   const known = new Set(groups.map((g) => g.id))
   out.push({ key: NO_SECTION, label: 'Other items', items: sorted.filter((i) => !i.group_id || !known.has(i.group_id)) })
   return out.filter((s) => s.items.length > 0)
 }
 
 const byName = (a: StockItem, b: StockItem) => a.name.localeCompare(b.name)
+
+/** A category as it reads on its own: "Drinks · Energy Drinks" where the shop uses departments. */
+export const categoryLabel = (g: StockGroup) => (g.parent_name ? `${g.parent_name} · ${g.name}` : g.name)
+
+/** Picker options for a category, under a heading per department where there are any. */
+export function CategoryOptions({ groups }: { groups: StockGroup[] }) {
+  const runs: { dept: string | null; items: StockGroup[] }[] = []
+  for (const g of groups) {
+    const last = runs[runs.length - 1]
+    if (last && last.dept === (g.parent_name ?? null)) last.items.push(g)
+    else runs.push({ dept: g.parent_name ?? null, items: [g] })
+  }
+  return <>{runs.map((r, k) => r.dept
+    ? <optgroup key={k} label={r.dept}>{r.items.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</optgroup>
+    : r.items.map((g) => <option key={g.id} value={g.id}>{g.name}</option>))}</>
+}
 
 /** One supplier's links, by product: what they sell, in what carton, at what price, in what order. */
 export type SupplierLinks = Map<string, ItemSupplier>

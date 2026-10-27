@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  useBulkUpdate, useItemCosts, usePlaceItems, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroups,
+  useBulkUpdate, useItemCosts, usePlaceItems, useItemSuppliers, useRemoveItemSupplier, useSave, useSaveItemSupplier, useSetItemOrder, useStockGroupRows, useStockGroups,
   useStockBatches, useStockItems, useStockLocations, useSuppliers,
 } from '../lib/api'
 import { walkOrder } from '../lib/layout'
@@ -11,7 +11,7 @@ import { fmtDay, fmtShort } from '../lib/dates'
 import { qtyStr } from '../lib/purchasing'
 import { aud, parseMoney } from '../lib/format'
 import type { ItemSupplier, StockGroup, StockItem, Supplier } from '../lib/types'
-import { bySection, FoodHeader, linksFor, NO_SECTION, supplierOrder, type SupplierLinks } from '../components/catalogue'
+import { bySection, categoryLabel, CategoryOptions, FoodHeader, linksFor, NO_SECTION, supplierOrder, type Section, type SupplierLinks } from '../components/catalogue'
 import { TableEditor } from '../components/TableEditor'
 import { DeleteButton, ErrorBox, Loading, MoneyInput, SaveBar, SearchBox, Segmented } from '../components/ui'
 
@@ -115,8 +115,11 @@ function Products({ editing, setEditing }: { editing: StockItem | 'new' | null; 
       : i.supplier_id === supplierId || (linksByItem.get(i.id) ?? []).some((l) => l.supplier_id === supplierId)
   const pool = all.filter((i) => (showHidden || i.active) && fromSupplier(i) && (!needle || i.name.toLowerCase().includes(needle)))
   const sections = bySection(pool, groupList)
-  const current = sections.some((s) => s.key === cat) ? cat : 'all'
-  const shown = current === 'all' ? sections : sections.filter((s) => s.key === current)
+  // A department ("dept:<id>") shows every category in it.
+  const departments = [...new Map(sections.filter((s) => s.departmentId).map((s) => [s.departmentId!, s.department!])).entries()]
+  const inDept = (key: string) => (s: Section) => `dept:${s.departmentId}` === key
+  const current = sections.some((s) => s.key === cat || inDept(cat)(s)) ? cat : 'all'
+  const shown = current === 'all' ? sections : sections.filter((s) => s.key === current || inDept(current)(s))
   // Long categories are cut short while everything is listed; a search or one category shows it all.
   const capped = current === 'all' && !needle
   const rowsOf = (items: StockItem[]) => (capped ? items.slice(0, PER_GROUP) : items)
@@ -145,7 +148,22 @@ function Products({ editing, setEditing }: { editing: StockItem | 'new' | null; 
           </select>
           <select aria-label="Category" className="field !h-9 !w-auto !py-0 !text-[13px]" value={current} onChange={(e) => setCat(e.target.value)}>
             <option value="all">All categories · {pool.length.toLocaleString('en-AU')}</option>
-            {sections.map((s) => <option key={s.key} value={s.key}>{s.label} · {s.items.length}</option>)}
+            {departments.length > 0 && (
+              <optgroup label="Departments">
+                {departments.map(([id, name]) => (
+                  <option key={id} value={`dept:${id}`}>All {name} · {sections.filter(inDept(`dept:${id}`)).reduce((n, s) => n + s.items.length, 0)}</option>
+                ))}
+              </optgroup>
+            )}
+            {departments.length === 0
+              ? sections.map((s) => <option key={s.key} value={s.key}>{s.label} · {s.items.length}</option>)
+              : sections.map((s, k) => (k > 0 && (s.department ?? null) === (sections[k - 1].department ?? null) ? null : (
+                <optgroup key={s.key} label={s.department ?? 'Other'}>
+                  {sections.filter((x) => (x.department ?? null) === (s.department ?? null)).map((x) => (
+                    <option key={x.key} value={x.key}>{x.label} · {x.items.length}</option>
+                  ))}
+                </optgroup>
+              )))}
           </select>
         </div>
 
@@ -165,10 +183,13 @@ function Products({ editing, setEditing }: { editing: StockItem | 'new' | null; 
           </p>
         )}
 
-        {shown.map((s) => {
+        {shown.map((s, k) => {
           const rows = rowsOf(s.items)
           return (
             <div key={s.key}>
+              {s.department && s.department !== shown[k - 1]?.department && (
+                <div className="border-t border-line bg-surface-2 px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.04em] text-muted first:border-t-0 desk:px-5">{s.department}</div>
+              )}
               <label className="flex cursor-pointer items-center gap-2.5 px-3.5 pb-2 pt-3 desk:px-5">
                 <input type="checkbox" className={box} aria-label={`Select all in ${s.label}`}
                   checked={rows.every((i) => selected.has(i.id))}
@@ -237,7 +258,7 @@ function Products({ editing, setEditing }: { editing: StockItem | 'new' | null; 
       {chosen.length > 0 && (
         <BulkBar
           ids={chosen}
-          groups={groupList.map((g) => ({ value: g.id, label: g.name }))}
+          groups={groupList.map((g) => ({ value: g.id, label: categoryLabel(g) }))}
           suppliers={supplierList.filter((s) => s.active).map((s) => ({ value: s.id, label: s.name }))}
           locations={[...(locations.data ?? [])].sort(walkOrder).map((l) => ({ value: l.id, label: l.name }))}
           onDone={() => setSelected(new Set())}
@@ -248,7 +269,7 @@ function Products({ editing, setEditing }: { editing: StockItem | 'new' | null; 
         <ProductDrawer
           key={editing === 'new' ? 'new' : editing.id}
           item={editing === 'new' ? null : editing}
-          defaults={{ group_id: current !== 'all' && current !== NO_SECTION ? current : null, supplier_id: supplierId && supplierId !== NO_SUPPLIER ? supplierId : null }}
+          defaults={{ group_id: current !== 'all' && current !== NO_SECTION && !current.startsWith('dept:') ? current : null, supplier_id: supplierId && supplierId !== NO_SUPPLIER ? supplierId : null }}
           groups={groupList}
           suppliers={supplierList}
           links={editing === 'new' ? [] : linksByItem.get(editing.id) ?? []}
@@ -328,7 +349,7 @@ function ProductDrawer({ item, defaults, groups, suppliers, links, onClose }: {
           {field('Category', (
             <select className="field" value={group} onChange={(e) => setGroup(e.target.value)}>
               <option value="">No category</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <CategoryOptions groups={groups} />
             </select>
           ))}
           {field('Usually ordered from', (
@@ -749,15 +770,27 @@ function Suppliers() {
 }
 
 function Sections() {
-  const groups = useStockGroups()
+  const groups = useStockGroupRows()
   if (groups.isLoading) return <Loading />
+  const rows = groups.data ?? []
+  const byId = new Map(rows.map((g) => [g.id, g]))
+  // Departments are the categories nothing else sits inside; list each one's categories under it.
+  const top = rows.filter((g) => !g.parent_id)
+  const ordered = [...rows].sort((a, b) => {
+    const da = a.parent_id ? byId.get(a.parent_id) : a
+    const db = b.parent_id ? byId.get(b.parent_id) : b
+    return (da?.sort ?? 0) - (db?.sort ?? 0) || (da?.name ?? '').localeCompare(db?.name ?? '')
+      || Number(!!a.parent_id) - Number(!!b.parent_id) || a.sort - b.sort || a.name.localeCompare(b.name)
+  })
   return (
     <ListCard title="Categories"
-      sub="Products are grouped by these, and the count sheet follows this order where a product isn't on a shelf yet. Lowest number first. Min stock and clearance days apply to every product in the category that doesn't set its own.">
-      <TableEditor table="stock_groups" rows={groups.data ?? []} addLabel="Add category"
-        defaults={{ sort: ((groups.data ?? []).reduce((m, g) => Math.max(m, g.sort), 0) + 10) }}
+      sub="Products are grouped by these, and the count sheet follows this order where a product isn't on a shelf yet. Lowest number first. A big catalogue can use departments: put categories inside one (Energy Drinks inside Drinks) and products in the categories. Min stock and clearance days apply to every product under a category or department that doesn't set its own.">
+      <TableEditor table="stock_groups" rows={ordered} addLabel="Add category"
+        defaults={{ sort: (rows.reduce((m, g) => Math.max(m, g.sort), 0) + 10) }}
         fields={[
           { key: 'name', label: 'Category', type: 'text', required: true },
+          { key: 'parent_id', label: 'Inside department', type: 'select', width: 'md:w-44',
+            options: top.map((g) => ({ value: g.id, label: g.name })) },
           { key: 'sort', label: 'Order', type: 'number', width: 'md:w-20 md:text-right' },
           { key: 'min_stock', label: 'Min stock', type: 'number', width: 'md:w-24 md:text-right' },
           { key: 'clearance_days', label: 'Clearance days', type: 'number', width: 'md:w-28 md:text-right' },

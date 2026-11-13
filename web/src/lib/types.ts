@@ -678,3 +678,43 @@ export interface XeroCatalog {
   earningsRates: { id: string; name: string; type: string; rateType: string }[]
   calendars: { id: string; name: string; type: string }[]
 }
+
+// ---------- menu ----------
+// What the shop sells (the till's menu), as opposed to stock items, which it buys and counts.
+
+export interface MenuCategory { id: string; business_id: string; name: string; sort: number; active: boolean }
+
+export interface MenuItem {
+  id: string
+  business_id: string
+  category_id: string
+  name: string
+  description: string | null
+  /** The code the till and online ordering know it by. */
+  plu: string | null
+  /** GST included. Null when it comes in sizes, each with its own price. */
+  price: number | null
+  gst_free: boolean
+  image_url: string | null
+  /** The catalogue product it is, when it's sold as bought (a can of Coke). */
+  stock_item_id: string | null
+  active: boolean
+  sort: number
+}
+
+export interface MenuItemSize { id: string; business_id: string; item_id: string; name: string; price: number; plu: string | null; sort: number; active: boolean }
+
+/** A question asked when an item is ordered: how it's cooked, which salad. */
+export interface ModifierGroup { id: string; business_id: string; name: string; min_choices: number; max_choices: number; repeat: boolean }
+export interface ModifierOption { id: string; business_id: string; group_id: string; name: string; price: number; sort: number; active: boolean }
+
+/** An item asking a group. Null limits mean the group's own. */
+export interface MenuItemModifier {
+  business_id: string
+  item_id: string
+  group_id: string
+  min_choices: number | null
+  max_choices: number | null
+  repeat: boolean | null
+  sort: number
+}

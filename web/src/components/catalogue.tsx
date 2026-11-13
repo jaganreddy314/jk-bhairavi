@@ -25,6 +25,7 @@ export function FoodHeader({ sub, action }: { sub: string; action?: ReactNode })
         <NavLink to="/food" end className={tab}>Food cost</NavLink>
         <NavLink to="/food/sales" end className={tab}>Item sales</NavLink>
         <NavLink to="/food/catalogue" className={tab}>Catalogue</NavLink>
+        <NavLink to="/food/menu" className={tab}>Menu</NavLink>
       </nav>
     </div>
   )

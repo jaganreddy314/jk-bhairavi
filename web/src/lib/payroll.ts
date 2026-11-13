@@ -117,6 +117,7 @@ export const PERMS: { key: Perm; label: string; sub: string }[] = [
   { key: 'purchasing', label: 'Purchase orders', sub: 'Order from suppliers and receive deliveries' },
   { key: 'stock', label: 'Stock counts', sub: 'Count what’s on the shelves' },
   { key: 'catalogue', label: 'Catalogue', sub: 'Products, suppliers and the store layout' },
+  { key: 'temps', label: 'Fridge temps', sub: 'Log fridge and freezer temperatures, and add fridges' },
   { key: 'people', label: 'People', sub: 'The team and their employment details' },
   { key: 'roster', label: 'Schedule', sub: 'The weekly roster and shift costs' },
   { key: 'payroll', label: 'Payroll', sub: 'Pay rates, awards and payroll setup; editing people' },

@@ -34,6 +34,7 @@ const GLYPH = {
   calendar: <><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   banknote: <><rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></>,
   building: <><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4M10 10h4M10 14h4M10 18h4" /></>,
+  thermometer: <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
 }
 
@@ -49,10 +50,14 @@ const OVERVIEW: NavItem[] = [
 // Not a phone tab: it's in the account sheet there, and the Stock and Home pages show a banner.
 const ALERTS: NavItem = { to: '/alerts', label: 'Stock alerts', glyph: GLYPH.bell, perms: ALERT_PERMS, badge: <AlertBadge /> }
 
+// Like alerts, it's in the account sheet on a phone (and the + button).
+const TEMPS: NavItem = { to: '/temps', label: 'Fridge temps', glyph: GLYPH.thermometer, perms: ['temps'] }
+
 const INVENTORY: NavItem[] = [
   { to: '/orders', label: 'Purchase orders', glyph: GLYPH.orders, perms: ['purchasing'] },
   { to: '/stock', label: 'Stock counts', glyph: GLYPH.stock, perms: ['stock'] },
   ALERTS,
+  TEMPS,
   { to: '/food', label: 'Food', glyph: GLYPH.food, perms: ['finance', 'catalogue'] },
 ]
 
@@ -77,10 +82,11 @@ const TABS: NavItem[] = [
   { to: '/food', label: 'Food', glyph: GLYPH.food, perms: ['finance', 'catalogue'] },
 ]
 
-/** What the + button offers: the three things entered most. */
+/** What the + button offers: the things entered most. */
 const QUICK_ADD = [
   { to: '/sales', label: 'Enter sales', sub: "Today's totals and cash", glyph: '$', tone: 'bg-accent-tint text-accent', perms: ['sales'] as Perm[] },
   { to: '/expenses/new', label: 'Add expense', sub: 'Wages, rent, bills and more', glyph: '−', tone: 'bg-[#EEF4FF] text-[#444CE7] dark:bg-[#1F2A5C] dark:text-[#A4BCFD]', perms: ['finance'] as Perm[] },
+  { to: '/temps', label: 'Log fridge temps', sub: "Today's fridge and freezer checks", glyph: '°', tone: 'bg-[#EFF8FF] text-[#175CD3] dark:bg-[#102A56] dark:text-[#84CAFF]', perms: ['temps'] as Perm[] },
   { to: '/orders/new', label: 'New purchase order', sub: 'Order from a supplier', glyph: '+', tone: 'bg-[#FFFAEB] text-[#DC6803] dark:bg-[#2B1E07] dark:text-[#FEC84B]', perms: ['purchasing'] as Perm[] },
 ]
 
@@ -297,7 +303,7 @@ function PhoneChrome({ email }: { email?: string }) {
             <span className="block text-xs text-muted">Your account and password</span>
           </span>
         </button>
-        {[...allowed([...OVERVIEW.slice(1), ALERTS, ...TEAM, ...MORE]), ...(isAdmin ? [PLATFORM] : [])].map((m) => (
+        {[...allowed([...OVERVIEW.slice(1), ALERTS, TEMPS, ...TEAM, ...MORE]), ...(isAdmin ? [PLATFORM] : [])].map((m) => (
           <button key={m.to} type="button" onClick={() => go(m.to)}
             className={`${sheetRow} font-medium ${isOn(pathname, m) ? 'text-accent' : 'text-ink-2'}`}>
             <Icon size={20}>{m.glyph}</Icon>

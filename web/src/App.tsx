@@ -16,6 +16,7 @@ import OrderForm from './pages/OrderForm'
 import StockCounts from './pages/StockCounts'
 import StockCountSheet from './pages/StockCountSheet'
 import StockAlerts from './pages/StockAlerts'
+import FridgeTemps from './pages/FridgeTemps'
 import Catalogue from './pages/Catalogue'
 import ItemSalesEntry from './pages/ItemSalesEntry'
 import People from './pages/People'
@@ -67,6 +68,7 @@ export default function App() {
                   <Route path="stock" element={<Need perms={['stock']}><StockCounts /></Need>} />
                   <Route path="stock/:id" element={<Need perms={['stock']}><StockCountSheet /></Need>} />
                   <Route path="alerts" element={<Need perms={ALERT_PERMS}><StockAlerts /></Need>} />
+                  <Route path="temps" element={<Need perms={['temps']}><FridgeTemps /></Need>} />
                   <Route path="food" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><FoodCost /></Suspense></Need>} />
                   <Route path="food/catalogue" element={<Need perms={['catalogue']}><Catalogue /></Need>} />
                   <Route path="food/sales" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><ItemSales /></Suspense></Need>} />

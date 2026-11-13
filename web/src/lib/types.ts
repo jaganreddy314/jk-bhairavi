@@ -44,7 +44,7 @@ export interface BusinessUser {
 }
 
 /** An area of the app a security group can open. */
-export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'people' | 'roster' | 'payroll' | 'sensitive' | 'admin'
+export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'temps' | 'people' | 'roster' | 'payroll' | 'sensitive' | 'admin'
 
 export interface SecurityGroup {
   id: string
@@ -368,6 +368,34 @@ export type BatchStatus = 'active' | 'on_clearance' | 'cleared' | 'written_off'
 export type BatchState = 'upcoming' | 'due' | 'on_clearance' | 'expired'
 
 /** Some of a product sharing one expiry date, still on the shelf (v_stock_batches). */
+export type FridgeKind = 'fridge' | 'freezer' | 'hot'
+
+/** A fridge, freezer or hot display, and the range it should hold. */
+export interface Fridge {
+  id: string
+  business_id: string
+  name: string
+  kind: FridgeKind
+  /** °C; null = no limit that side. */
+  min_temp: number | null
+  max_temp: number | null
+  active: boolean
+  sort: number
+}
+
+/** One thermometer reading. */
+export interface FridgeReading {
+  id: string
+  business_id: string
+  fridge_id: string
+  reading_date: string
+  recorded_at: string
+  temp: number
+  /** What was done about it, when it was out of range. */
+  note: string | null
+  recorded_by: string | null
+}
+
 export interface StockBatch {
   id: string
   business_id: string

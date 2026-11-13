@@ -8,7 +8,7 @@ import type {
   StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterPosition, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
-  StockBatch, StockLevel,
+  StockBatch, StockLevel, Fridge, FridgeReading,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -197,6 +197,8 @@ const DEPENDENTS: Record<string, string[]> = {
   item_suppliers: ['item_suppliers'],
   stock_count_lines: ['stock_count_lines', 'stock_counts', 'food_cost', 'stock_levels'],
   stock_batches: ['stock_batches'],
+  fridges: ['fridges'],
+  fridge_readings: ['fridge_readings'],
 }
 
 /** Tables whose rows belong to one business; inserts get business_id filled in. */
@@ -204,7 +206,7 @@ const DEPENDENTS: Record<string, string[]> = {
 // copies business_id from the parent order or count, which is what row-level security checks.
 const SCOPED = new Set(['sales_days', 'expenses', 'recurring_expenses', 'suppliers', 'staff', 'partners',
   'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items',
-  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups', 'shifts', 'pay_runs'])
+  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups', 'shifts', 'pay_runs', 'fridges'])
 
 function useWrite<V>(tableName: string, fn: (v: V) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
   const qc = useQueryClient()
@@ -707,6 +709,29 @@ export const useAddExpiry = () =>
   useRpc<{ itemId: string; expiresOn: string; qty: number | null; note?: string }>('add_expiry_date', ['stock_batches'], (v) => ({
     p_item: v.itemId, p_expires: v.expiresOn, p_qty: v.qty, p_note: v.note ?? null,
   }))
+
+// ---------- fridge temps ----------
+
+/** Every fridge, retired ones too: their readings are still in the log. */
+export const useFridges = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['fridges', biz],
+    queryFn: async () =>
+      money(await run(supabase.from('fridges').select('*').eq('business_id', biz).order('sort').order('name')), ['min_temp', 'max_temp']) as Fridge[],
+  })
+}
+
+/** Readings between two days, oldest first. */
+export const useFridgeReadings = (from: string, to: string) => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['fridge_readings', biz, from, to],
+    queryFn: async () =>
+      money(await runAll((a, b) => supabase.from('fridge_readings').select('*').eq('business_id', biz)
+        .gte('reading_date', from).lte('reading_date', to).order('recorded_at').order('id').range(a, b)), ['temp']) as FridgeReading[],
+  })
+}
 
 // ---------- passwords ----------
 

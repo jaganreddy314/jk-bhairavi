@@ -760,7 +760,7 @@ export const useSaveMenuItem = () =>
     return results.find((x) => x.error) ?? { data: null, error: null }
   })
 
-/** Load or refresh the menu from an import document (see import_menu in 022_menu.sql). */
+/** Load or refresh the menu from an import document (see import_menu in 023_menu.sql). */
 export const useImportMenu = () => {
   const biz = useBusinessId()
   return useWrite<unknown>('menu', (menu) => supabase.rpc('import_menu', { p_business: biz, p_menu: menu }))

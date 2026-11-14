@@ -44,7 +44,7 @@ export interface BusinessUser {
 }
 
 /** An area of the app a security group can open. */
-export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'temps' | 'people' | 'roster' | 'payroll' | 'sensitive' | 'admin'
+export type Perm = 'finance' | 'sales' | 'purchasing' | 'stock' | 'catalogue' | 'temps' | 'pos' | 'people' | 'roster' | 'payroll' | 'sensitive' | 'admin'
 
 export interface SecurityGroup {
   id: string

@@ -678,3 +678,32 @@ export interface XeroCatalog {
   earningsRates: { id: string; name: string; type: string; rateType: string }[]
   calendars: { id: string; name: string; type: string }[]
 }
+
+// ---------- wholesale tobacco prices (shared by every business) ----------
+
+export type WholesaleCategory = 'cigarettes' | 'tobacco' | 'cigars' | 'filters' | 'papers' | 'lighters'
+export interface WholesaleProduct {
+  id: string
+  name: string
+  category: WholesaleCategory
+  size: string | null
+  /** One retail unit: pack, pouch, box, booklet, lighter. */
+  unit: string
+  gtins: string[]
+}
+/** A wholesaler's current price for a product, in what they sell (`units` retail units). */
+export interface WholesalePrice {
+  id: string
+  product_id: string
+  wholesaler_id: string
+  wholesaler: string
+  supplier_code: string | null
+  gtin: string | null
+  description: string
+  units: number
+  price_ex_gst: number
+  price_inc_gst: number
+  unit_price_inc_gst: number
+  price_list_from: string
+  price_list_to: string | null
+}

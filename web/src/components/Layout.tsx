@@ -35,6 +35,7 @@ const GLYPH = {
   banknote: <><rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></>,
   building: <><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4M10 10h4M10 14h4M10 18h4" /></>,
   thermometer: <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />,
+  tag: <><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></>,
   people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
 }
 
@@ -53,11 +54,15 @@ const ALERTS: NavItem = { to: '/alerts', label: 'Stock alerts', glyph: GLYPH.bel
 // Like alerts, it's in the account sheet on a phone (and the + button).
 const TEMPS: NavItem = { to: '/temps', label: 'Fridge temps', glyph: GLYPH.thermometer, perms: ['temps'] }
 
+// Wholesale tobacco prices; like alerts, in the account sheet on a phone.
+const PRICES: NavItem = { to: '/prices', label: 'Tobacco prices', glyph: GLYPH.tag, perms: ['purchasing'] }
+
 const INVENTORY: NavItem[] = [
   { to: '/orders', label: 'Purchase orders', glyph: GLYPH.orders, perms: ['purchasing'] },
   { to: '/stock', label: 'Stock counts', glyph: GLYPH.stock, perms: ['stock'] },
   ALERTS,
   TEMPS,
+  PRICES,
   { to: '/food', label: 'Food', glyph: GLYPH.food, perms: ['finance', 'catalogue'] },
 ]
 
@@ -303,7 +308,7 @@ function PhoneChrome({ email }: { email?: string }) {
             <span className="block text-xs text-muted">Your account and password</span>
           </span>
         </button>
-        {[...allowed([...OVERVIEW.slice(1), ALERTS, TEMPS, ...TEAM, ...MORE]), ...(isAdmin ? [PLATFORM] : [])].map((m) => (
+        {[...allowed([...OVERVIEW.slice(1), ALERTS, TEMPS, PRICES, ...TEAM, ...MORE]), ...(isAdmin ? [PLATFORM] : [])].map((m) => (
           <button key={m.to} type="button" onClick={() => go(m.to)}
             className={`${sheetRow} font-medium ${isOn(pathname, m) ? 'text-accent' : 'text-ink-2'}`}>
             <Icon size={20}>{m.glyph}</Icon>

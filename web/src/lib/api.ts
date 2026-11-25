@@ -8,7 +8,7 @@ import type {
   StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterPosition, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
-  StockBatch, StockLevel, Fridge, FridgeReading,
+  StockBatch, StockLevel, Fridge, FridgeReading, WholesalePrice, WholesaleProduct,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -293,6 +293,29 @@ export const useRemovePerson = () => {
     supabase.from('business_users').delete().eq('business_id', biz).eq('email', email),
   )
 }
+
+// ---------- wholesale prices ----------
+// Not a business's own data: one price list for every store, so no business filter.
+
+export const useWholesaleProducts = () =>
+  useQuery({
+    queryKey: ['wholesale_products'],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('wholesale_products').select('id, name, category, size, unit, gtins')
+        .order('name').order('id').range(a, b))) as WholesaleProduct[],
+    staleTime: 10 * 60_000,
+  })
+
+export const useWholesalePrices = () =>
+  useQuery({
+    queryKey: ['wholesale_prices'],
+    queryFn: async () =>
+      money(
+        await runAll((a, b) => supabase.from('v_wholesale_current_prices').select('*').order('id').range(a, b)),
+        ['price_ex_gst', 'price_inc_gst', 'unit_price_inc_gst'],
+      ) as WholesalePrice[],
+    staleTime: 10 * 60_000,
+  })
 
 // ---------- platform admin ----------
 

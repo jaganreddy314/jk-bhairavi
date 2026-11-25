@@ -708,6 +708,11 @@ export interface WholesalePrice {
   price_list_to: string | null
 }
 
+/** A store's catalogue item and the shared wholesale product it is. */
+export interface ItemWholesaleProduct { item_id: string; product_id: string }
+/** The store's own supplier record for a wholesaler. */
+export interface BusinessWholesaler { wholesaler_id: string; supplier_id: string }
+
 // ---------- menu ----------
 // What the shop sells (the till's menu), as opposed to stock items, which it buys and counts.
 

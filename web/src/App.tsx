@@ -18,6 +18,7 @@ import StockCountSheet from './pages/StockCountSheet'
 import StockAlerts from './pages/StockAlerts'
 import FridgeTemps from './pages/FridgeTemps'
 import TobaccoPrices from './pages/TobaccoPrices'
+import TobaccoOrder from './pages/TobaccoOrder'
 import Catalogue from './pages/Catalogue'
 import Menu from './pages/Menu'
 import ItemSalesEntry from './pages/ItemSalesEntry'
@@ -66,6 +67,7 @@ export default function App() {
                   <Route path="recurring" element={<Need perms={['finance']}><Recurring /></Need>} />
                   <Route path="orders" element={<Need perms={['purchasing']}><Orders /></Need>} />
                   <Route path="orders/new" element={<Need perms={['purchasing']}><OrderForm /></Need>} />
+                  <Route path="orders/tobacco" element={<Need perms={['purchasing']}><TobaccoOrder /></Need>} />
                   <Route path="orders/:id" element={<Need perms={['purchasing']}><OrderForm /></Need>} />
                   <Route path="stock" element={<Need perms={['stock']}><StockCounts /></Need>} />
                   <Route path="stock/:id" element={<Need perms={['stock']}><StockCountSheet /></Need>} />

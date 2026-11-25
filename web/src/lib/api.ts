@@ -8,7 +8,7 @@ import type {
   StaffReadiness, StaffSuper, StaffTax, PublicHoliday, RosterPerson, RosterPosition, RosterWeek, Shift, StaffAvailability, PayRun, PayRunLine, XeroCatalog, XeroConnection, XeroImportCandidate, XeroImportResult, XeroPushResult, XeroRateMap,
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
-  StockBatch, StockLevel, Fridge, FridgeReading, WholesalePrice, WholesaleProduct,
+  StockBatch, StockLevel, Fridge, FridgeReading, WholesalePrice, WholesaleProduct, ItemWholesaleProduct, BusinessWholesaler,
   MenuCategory, MenuItem, MenuItemModifier, MenuItemSize, ModifierGroup, ModifierOption,
 } from './types'
 import { codeKey, normalise } from './report'
@@ -196,6 +196,7 @@ const DEPENDENTS: Record<string, string[]> = {
   // A new product can be added from an import, and its sales go with it.
   item_sales: ['item_sales', 'stock_levels'],
   item_suppliers: ['item_suppliers'],
+  item_wholesale_products: ['item_wholesale_products'],
   stock_count_lines: ['stock_count_lines', 'stock_counts', 'food_cost', 'stock_levels'],
   stock_batches: ['stock_batches'],
   fridges: ['fridges'],
@@ -326,6 +327,57 @@ export const useWholesalePrices = () =>
       ) as WholesalePrice[],
     staleTime: 10 * 60_000,
   })
+
+/** Which shared wholesale product each of the store's catalogue items is. */
+export const useItemWholesaleProducts = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['item_wholesale_products', biz],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('item_wholesale_products').select('item_id, product_id').eq('business_id', biz)
+        .order('item_id').range(a, b))) as ItemWholesaleProduct[],
+  })
+}
+
+/** Which of the store's suppliers each wholesaler is (Metcash's list comes through Campbell). */
+export const useBusinessWholesalers = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['business_wholesalers', biz],
+    queryFn: async () =>
+      (await run(supabase.from('business_wholesalers').select('wholesaler_id, supplier_id').eq('business_id', biz))) as BusinessWholesaler[],
+  })
+}
+
+/** Link the store's items to wholesale products by the Metcash codes and barcodes in their aliases. */
+export const useAutoLinkWholesale = () => {
+  const biz = useBusinessId()
+  return useRpc<void>('link_wholesale_items', ['item_wholesale_products'], () => ({ b: biz }))
+}
+
+/** Say by hand which wholesale product an item is, or (product null) unlink it. */
+export const useLinkWholesaleItem = () => {
+  const biz = useBusinessId()
+  return useWrite<{ item_id: string; product_id: string | null }>('item_wholesale_products', (v) =>
+    v.product_id
+      ? supabase.from('item_wholesale_products').upsert({ business_id: biz, item_id: v.item_id, product_id: v.product_id }, { onConflict: 'item_id' })
+      : supabase.from('item_wholesale_products').delete().eq('item_id', v.item_id))
+}
+
+export interface WholesaleOrderLine {
+  wholesaler_id: string; item_id: string; qty: number; unit_cost: number; units: number; supplier_code: string | null; sort: number
+}
+
+/** One draft order per wholesaler, made in one go. Returns the new orders. */
+export const useCreateWholesaleOrders = () => {
+  const biz = useBusinessId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (lines: WholesaleOrderLine[]) =>
+      run<{ po_id: string; po_supplier_id: string }[]>(supabase.rpc('create_wholesale_orders', { b: biz, p_lines: lines })),
+    onSuccess: () => [...ALL_PURCHASING, 'suppliers', 'business_wholesalers'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
+  })
+}
 
 // ---------- platform admin ----------
 

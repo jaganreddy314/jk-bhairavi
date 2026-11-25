@@ -68,9 +68,11 @@ export function unitPrices(prices: WholesalePrice[]) {
   return [...best.values()].sort((a, b) => a.unit_price_inc_gst - b.unit_price_inc_gst)
 }
 
-export interface WantedItem { productId: string; qty: number }
+/** `key` tells apart two lines for the same product (two catalogue items); it defaults to the product. */
+export interface WantedItem { productId: string; qty: number; key?: string }
 
 export interface PlanLine {
+  key: string
   product: WholesaleProduct
   want: number
   pick: Option
@@ -97,12 +99,12 @@ export interface Plan {
  */
 export function plan(items: WantedItem[], products: Map<string, WholesaleProduct>, byProduct: Map<string, WholesalePrice[]>, allowed: (wholesalerId: string) => boolean): Plan {
   const missing: WholesaleProduct[] = []
-  const lines: { product: WholesaleProduct; want: number; opts: Option[] }[] = []
+  const lines: { key: string; product: WholesaleProduct; want: number; opts: Option[] }[] = []
   for (const it of items) {
     const product = products.get(it.productId)
     if (!product || it.qty <= 0) continue
     const opts = options((byProduct.get(product.id) ?? []).filter((p) => allowed(p.wholesaler_id)), it.qty)
-    if (opts.length) lines.push({ product, want: it.qty, opts })
+    if (opts.length) lines.push({ key: it.key ?? product.id, product, want: it.qty, opts })
     else missing.push(product)
   }
 
@@ -110,13 +112,13 @@ export function plan(items: WantedItem[], products: Map<string, WholesaleProduct
   for (const l of lines) wins.set(l.opts[0]!.price.wholesaler_id, (wins.get(l.opts[0]!.price.wholesaler_id) ?? 0) + 1)
   const orders = new Map<string, SupplierOrder>()
   let nextTotal = 0
-  for (const { product, want, opts } of lines) {
+  for (const { key, product, want, opts } of lines) {
     const tied = opts.filter((o) => o.cost === opts[0]!.cost)
     const pick = tied.reduce((a, b) => ((wins.get(b.price.wholesaler_id) ?? 0) > (wins.get(a.price.wholesaler_id) ?? 0) ? b : a))
     const next = opts.find((o) => o !== pick) ?? null
     nextTotal = cents(nextTotal + (next ?? pick).cost)
     const order = orders.get(pick.price.wholesaler_id) ?? { wholesalerId: pick.price.wholesaler_id, wholesaler: pick.price.wholesaler, lines: [], total: 0 }
-    order.lines.push({ product, want, pick, next })
+    order.lines.push({ key, product, want, pick, next })
     order.total = cents(order.total + pick.cost)
     orders.set(pick.price.wholesaler_id, order)
   }

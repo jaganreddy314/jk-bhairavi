@@ -8,6 +8,7 @@ import {
   CATEGORIES, orderStep, orderText, plan, qtyLabel, unitPrices, type PlanLine, type SupplierOrder, type WantedItem,
 } from '../lib/wholesale'
 import { Empty, ErrorBox, Loading, PageHeader, Pill, SearchBox, Segmented } from '../components/ui'
+import { Stepper } from '../components/wholesale'
 
 const OFF_KEY = 'wholesale-off'
 const listKey = (biz: string) => `wholesale-list:${biz}`
@@ -156,16 +157,6 @@ function ProductRow({ product, prices, qty, onQty }: {
   )
 }
 
-function Stepper({ product, qty, step, onQty }: { product: WholesaleProduct; qty: number; step: number; onQty: (n: number) => void }) {
-  return (
-    <div className="flex items-center gap-1">
-      <button type="button" className="btn btn-sm w-8 px-0" aria-label="Less" onClick={() => onQty(qty - step)}>−</button>
-      <span className="num min-w-[84px] text-center text-[13px] font-medium">{qtyLabel(product, qty)}</span>
-      <button type="button" className="btn btn-sm w-8 px-0" aria-label="More" onClick={() => onQty(qty + step)}>+</button>
-    </div>
-  )
-}
-
 function OrderPanel({ result, qtyOf, setQty, pricesFor, onClear }: {
   result: ReturnType<typeof plan>; qtyOf: (id: string) => number; setQty: (id: string, n: number) => void
   pricesFor: (id: string) => WholesalePrice[]; onClear: () => void
@@ -235,7 +226,7 @@ function SupplierCard({ order, qtyOf, setQty, pricesFor }: {
       </div>
       <ul className="divide-y divide-line-2">
         {order.lines.map((l) => (
-          <OrderLine key={l.product.id} line={l} qty={qtyOf(l.product.id)} step={orderStep(l.product, pricesFor(l.product.id))}
+          <OrderLine key={l.key} line={l} qty={qtyOf(l.product.id)} step={orderStep(l.product, pricesFor(l.product.id))}
             onQty={(n) => setQty(l.product.id, n)} />
         ))}
       </ul>

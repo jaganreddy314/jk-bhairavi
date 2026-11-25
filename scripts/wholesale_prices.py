@@ -13,6 +13,8 @@ What each source looks like:
                per pouch for tobacco, per outer for filters/papers/lighters ("140/1400" = 10 boxes).
   Metcash      monthly tobacco workbook, one sheet per manufacturer. Prices ex GST, for "Metcash Pack Qty"
                units (cigarette cartons count 1 = 10 packs). "Other Updated" replaces "Other".
+               Bought through Campbells, which sells all but cigarettes by the each: those are loaded
+               per unit (carton price / pack qty).
   One          price file. Prices inc GST. ":CT" codes are cartons/outers (cigarettes 10 packs, 30g tobacco
                5 pouches, 15g 10 pouches); cigars come both single and boxed.
 
@@ -173,9 +175,15 @@ def read_metcash(path):
             category = metcash_category(desc, g('Description') if 'Description' in hdr else None)
             qty = int(g('Metcash Pack Qty'))
             ex = round(float(g('Price ex GST') if 'Price ex GST' in hdr else g('Carton Cost ex GST')), 2)
+            # Campbells (Metcash's cash & carry) sells cigarettes by the carton but everything else
+            # by the each (invoice 24 Nov 2026: Tally-Ho 5-packs at $5.28 EA), so those are priced singly.
+            if category == 'cigarettes':
+                units, unit_ex = qty * 10, ex
+            else:
+                units, unit_ex = 1, round(ex / qty, 2)
             rows[str(g('Metcash Code'))] = dict(
                 category=category, code=str(g('Metcash Code')), gtin=str(int(g('APN'))), description=desc,
-                units=qty * 10 if category == 'cigarettes' else qty, price_ex=ex, price_inc=round(ex * GST, 2))
+                units=units, price_ex=unit_ex, price_inc=round(unit_ex * GST, 2))
     return rows.values()
 
 

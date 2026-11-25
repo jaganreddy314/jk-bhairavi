@@ -88,6 +88,8 @@ export interface Supplier {
   name: string
   default_category: CategoryCode | null
   active: boolean
+  /** Least the supplier delivers, inc GST. */
+  min_order: number | null
 }
 
 /** Who a labour expense paid: a name and the rate used for hours × rate. */

@@ -151,3 +151,134 @@ export function orderText(o: SupplierOrder) {
   })
   return [`${o.wholesaler} order`, ...rows, `Total inc GST: ${aud(o.total)}`].join('\n')
 }
+
+// ---------- the tobacco order: fewer deliveries, minimum orders, the person's own picks ----------
+
+export interface OrderRules {
+  /** Keep a line with a wholesaler already on the order when it's at most this much dearer per pack. */
+  tolerance: number
+  /** Least the wholesaler delivers, inc GST; 0 for none. */
+  minimum: (wholesalerId: string) => number
+  /** A wholesaler picked by hand for this line, if any. */
+  choice: (key: string) => string | undefined
+}
+
+/** Why a line went where it did. */
+export type Why = 'cheapest' | 'grouped' | 'minimum' | 'chosen'
+
+export interface OrderLine extends PlanLine {
+  why: Why
+  /** Every wholesaler's way to supply it, cheapest first. */
+  options: Option[]
+  /** What going here costs over the cheapest. */
+  extra: number
+}
+
+export interface WholesaleOrder { wholesalerId: string; wholesaler: string; lines: OrderLine[]; total: number; minimum: number }
+
+export interface OrderPlan {
+  orders: WholesaleOrder[]
+  total: number
+  /** The same list with every line at its cheapest, wherever that is. */
+  cheapest: number
+  missing: WholesaleProduct[]
+}
+
+/**
+ * Split the list so it costs least without a delivery for the sake of a few cents:
+ *  1. lines picked by hand go where they were picked;
+ *  2. each other line may go to any wholesaler within `tolerance` a pack of its cheapest, and
+ *     the wholesaler that can take the most such lines takes them, then the next…;
+ *  3. every line then goes to the cheapest of the wholesalers left on the order that it may use;
+ *  4. a wholesaler whose share is under its minimum hands its lines to the next best, when they
+ *     can all go somewhere else.
+ */
+export function planOrder(items: WantedItem[], products: Map<string, WholesaleProduct>, byProduct: Map<string, WholesalePrice[]>, rules: OrderRules): OrderPlan {
+  const missing: WholesaleProduct[] = []
+  type L = { key: string; product: WholesaleProduct; want: number; opts: Option[]; pick?: Option; why?: Why }
+  const lines: L[] = []
+  for (const it of items) {
+    const product = products.get(it.productId)
+    if (!product || it.qty <= 0) continue
+    const opts = options(byProduct.get(product.id) ?? [], it.qty)
+    if (opts.length) lines.push({ key: it.key ?? product.id, product, want: it.qty, opts })
+    else missing.push(product)
+  }
+  const near = (l: L) => l.opts.filter((o) => (o.cost - l.opts[0]!.cost) / l.want <= rules.tolerance + 1e-9)
+  const at = (l: L, w: string) => l.opts.find((o) => o.price.wholesaler_id === w)
+
+  for (const l of lines) {
+    const w = rules.choice(l.key)
+    const o = w ? at(l, w) : undefined
+    if (o) { l.pick = o; l.why = 'chosen' }
+  }
+  const used = new Set(lines.filter((l) => l.pick).map((l) => l.pick!.price.wholesaler_id))
+
+  // 2. Fewest wholesalers: greedily, the one that can take the most open lines (already on the order first).
+  let open = lines.filter((l) => !l.pick)
+  const chosen = new Set(used)
+  while (open.length) {
+    const can = new Map<string, { n: number; cost: number }>()
+    for (const l of open)
+      for (const o of near(l)) {
+        const c = can.get(o.price.wholesaler_id) ?? { n: 0, cost: 0 }
+        c.n++; c.cost += o.cost
+        can.set(o.price.wholesaler_id, c)
+      }
+    const [w] = [...can.entries()].sort(([a, x], [b, y]) =>
+      Number(chosen.has(b)) - Number(chosen.has(a)) || y.n - x.n || x.cost - y.cost)[0]!
+    chosen.add(w)
+    open = open.filter((l) => !near(l).some((o) => o.price.wholesaler_id === w))
+  }
+
+  // 3. Each line to its cheapest wholesaler among those on the order.
+  const settle = (l: L, allowed: (w: string) => boolean) => {
+    const o = near(l).find((o) => allowed(o.price.wholesaler_id))
+      ?? l.opts.find((o) => allowed(o.price.wholesaler_id))
+    if (!o) return false
+    l.pick = o
+    l.why = o === l.opts[0] || o.cost === l.opts[0]!.cost ? 'cheapest' : 'grouped'
+    return true
+  }
+  for (const l of lines) if (l.why !== 'chosen') settle(l, (w) => chosen.has(w))
+
+  // 4. Minimum orders: the smallest order under its minimum gives its lines away, if it can.
+  const dropped = new Set<string>()
+  const totalOf = (w: string) => lines.filter((l) => l.pick!.price.wholesaler_id === w).reduce((s, l) => s + l.pick!.cost, 0)
+  for (;;) {
+    const short = [...new Set(lines.map((l) => l.pick!.price.wholesaler_id))]
+      .filter((w) => !dropped.has(w) && rules.minimum(w) > 0 && totalOf(w) < rules.minimum(w))
+      .sort((a, b) => totalOf(a) - totalOf(b))
+    const w = short[0]
+    if (!w) break
+    dropped.add(w)
+    const mine = lines.filter((l) => l.pick!.price.wholesaler_id === w)
+    if (mine.some((l) => l.why === 'chosen')) continue
+    const onOrder = new Set(lines.filter((l) => l.pick!.price.wholesaler_id !== w).map((l) => l.pick!.price.wholesaler_id))
+    const ok = (x: string) => x !== w && !dropped.has(x)
+    if (!mine.every((l) => l.opts.some((o) => ok(o.price.wholesaler_id)))) continue
+    for (const l of mine) {
+      if (!settle(l, (x) => ok(x) && onOrder.has(x))) settle(l, ok)
+      l.why = 'minimum'
+    }
+  }
+
+  const orders = new Map<string, WholesaleOrder>()
+  for (const l of lines) {
+    const pick = l.pick!
+    const id = pick.price.wholesaler_id
+    const o = orders.get(id) ?? { wholesalerId: id, wholesaler: pick.price.wholesaler, lines: [], total: 0, minimum: rules.minimum(id) }
+    o.lines.push({ key: l.key, product: l.product, want: l.want, pick, next: l.opts.find((x) => x !== pick) ?? null,
+      why: l.why!, options: l.opts, extra: cents(pick.cost - l.opts[0]!.cost) })
+    o.total = cents(o.total + pick.cost)
+    orders.set(id, o)
+  }
+  const list = [...orders.values()].sort((a, b) => b.total - a.total)
+  for (const o of list) o.lines.sort((a, b) => a.product.name.localeCompare(b.product.name))
+  return {
+    orders: list,
+    total: cents(list.reduce((s, o) => s + o.total, 0)),
+    cheapest: cents(lines.reduce((s, l) => s + l.opts[0]!.cost, 0)),
+    missing,
+  }
+}

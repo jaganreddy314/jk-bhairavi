@@ -126,7 +126,7 @@ const scopedTable = <T,>(name: string, order: string, moneyFields: string[] = []
   })
 }
 
-export const useSuppliers = scopedTable<Supplier>('suppliers', 'name')
+export const useSuppliers = scopedTable<Supplier>('suppliers', 'name', ['min_order'])
 /** Full employee records: only people who can open People (row-level security). */
 export const useStaff = scopedTable<Staff>('staff', 'name', ['hourly_rate', 'above_award', 'ordinary_hours', 'fortnight_hour_limit'])
 

@@ -19,6 +19,7 @@ import StockAlerts from './pages/StockAlerts'
 import FridgeTemps from './pages/FridgeTemps'
 import TobaccoPrices from './pages/TobaccoPrices'
 import Catalogue from './pages/Catalogue'
+import Menu from './pages/Menu'
 import ItemSalesEntry from './pages/ItemSalesEntry'
 import People from './pages/People'
 import Account from './pages/Account'
@@ -73,6 +74,7 @@ export default function App() {
                   <Route path="prices" element={<Need perms={['purchasing']}><TobaccoPrices /></Need>} />
                   <Route path="food" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><FoodCost /></Suspense></Need>} />
                   <Route path="food/catalogue" element={<Need perms={['catalogue']}><Catalogue /></Need>} />
+                  <Route path="food/menu" element={<Need perms={['catalogue']}><Menu /></Need>} />
                   <Route path="food/sales" element={<Need perms={['finance']}><Suspense fallback={<Loading />}><ItemSales /></Suspense></Need>} />
                   <Route path="food/sales/add" element={<Need perms={['finance']}><ItemSalesEntry /></Need>} />
                   <Route path="food-cost" element={<Navigate to="/food" replace />} />

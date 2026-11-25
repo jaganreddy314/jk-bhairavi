@@ -9,6 +9,7 @@ import type {
   StockCount, StockCountLine, StockCountValue, StockGroup, StockItem, Supplier, WeeklyFoodCost,
   ItemAlias, ItemSale, ItemSalesWeek, ItemSupplier, StockItemPlace, StockLocation, StockLocationGroup,
   StockBatch, StockLevel, Fridge, FridgeReading, WholesalePrice, WholesaleProduct,
+  MenuCategory, MenuItem, MenuItemModifier, MenuItemSize, ModifierGroup, ModifierOption,
 } from './types'
 import { codeKey, normalise } from './report'
 
@@ -199,6 +200,14 @@ const DEPENDENTS: Record<string, string[]> = {
   stock_batches: ['stock_batches'],
   fridges: ['fridges'],
   fridge_readings: ['fridge_readings'],
+  menu_categories: ['menu_categories', 'menu_items'],
+  menu_items: ['menu_items'],
+  menu_item_sizes: ['menu_item_sizes'],
+  modifier_groups: ['modifier_groups'],
+  modifier_options: ['modifier_options'],
+  menu_item_modifiers: ['menu_item_modifiers'],
+  // An import touches every part of the menu.
+  menu: ['menu_categories', 'menu_items', 'menu_item_sizes', 'modifier_groups', 'modifier_options', 'menu_item_modifiers'],
 }
 
 /** Tables whose rows belong to one business; inserts get business_id filled in. */
@@ -206,7 +215,8 @@ const DEPENDENTS: Record<string, string[]> = {
 // copies business_id from the parent order or count, which is what row-level security checks.
 const SCOPED = new Set(['sales_days', 'expenses', 'recurring_expenses', 'suppliers', 'staff', 'partners',
   'partner_contributions', 'setup_costs', 'stock_groups', 'stock_items',
-  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups', 'shifts', 'pay_runs', 'fridges'])
+  'stock_locations', 'stock_location_groups', 'purchase_orders', 'stock_counts', 'security_groups', 'shifts', 'pay_runs', 'fridges',
+  'menu_categories', 'modifier_groups'])
 
 function useWrite<V>(tableName: string, fn: (v: V) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
   const qc = useQueryClient()
@@ -743,6 +753,40 @@ export const useFridges = () => {
     queryFn: async () =>
       money(await run(supabase.from('fridges').select('*').eq('business_id', biz).order('sort').order('name')), ['min_temp', 'max_temp']) as Fridge[],
   })
+}
+
+// ---------- menu ----------
+
+export const useMenuCategories = scopedTable<MenuCategory>('menu_categories', 'sort')
+export const useMenuItems = scopedTable<MenuItem>('menu_items', 'sort', ['price'])
+export const useMenuItemSizes = scopedTable<MenuItemSize>('menu_item_sizes', 'sort', ['price'])
+export const useModifierGroups = scopedTable<ModifierGroup>('modifier_groups', 'name')
+export const useModifierOptions = scopedTable<ModifierOption>('modifier_options', 'sort', ['price'])
+
+export const useMenuItemModifiers = () => {
+  const biz = useBusinessId()
+  return useQuery({
+    queryKey: ['menu_item_modifiers', biz],
+    queryFn: async () =>
+      (await runAll((a, b) => supabase.from('menu_item_modifiers').select('*').eq('business_id', biz)
+        .order('item_id').order('sort').order('group_id').range(a, b))) as MenuItemModifier[],
+  })
+}
+
+/** An item and its sizes in one go: the sizes' prices are what the till charges. */
+export const useSaveMenuItem = () =>
+  useWrite<{ item: Partial<MenuItem> & { id: string }; sizes: Pick<MenuItemSize, 'id' | 'price' | 'active'>[] }>('menu', async ({ item, sizes }) => {
+    const { id, ...rest } = item
+    const r = await supabase.from('menu_items').update(rest).eq('id', id)
+    if (r.error) return r
+    const results = await Promise.all(sizes.map(({ id, ...s }) => supabase.from('menu_item_sizes').update(s).eq('id', id)))
+    return results.find((x) => x.error) ?? { data: null, error: null }
+  })
+
+/** Load or refresh the menu from an import document (see import_menu in 023_menu.sql). */
+export const useImportMenu = () => {
+  const biz = useBusinessId()
+  return useWrite<unknown>('menu', (menu) => supabase.rpc('import_menu', { p_business: biz, p_menu: menu }))
 }
 
 /** Readings between two days, oldest first. */

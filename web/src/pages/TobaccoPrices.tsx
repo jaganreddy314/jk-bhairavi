@@ -5,10 +5,10 @@ import { fmtShort } from '../lib/dates'
 import { aud, cents } from '../lib/format'
 import type { WholesaleCategory, WholesalePrice, WholesaleProduct } from '../lib/types'
 import {
-  CATEGORIES, orderStep, orderText, plan, qtyLabel, unitPrices, type PlanLine, type SupplierOrder, type WantedItem,
+  byPrice, CATEGORIES, orderStep, orderText, PAGE, plan, qtyLabel, unitPrices, UNIT_OF, type PriceSort, type PlanLine, type SupplierOrder, type WantedItem,
 } from '../lib/wholesale'
 import { Empty, ErrorBox, Loading, PageHeader, Pill, SearchBox, Segmented } from '../components/ui'
-import { Stepper } from '../components/wholesale'
+import { PriceFilters, ShowMore, Stepper } from '../components/wholesale'
 
 const OFF_KEY = 'wholesale-off'
 const listKey = (biz: string) => `wholesale-list:${biz}`
@@ -29,8 +29,6 @@ function matches(p: WholesaleProduct, q: string) {
   return words.every((w) => name.includes(w))
 }
 
-const SHOWN = 60
-
 /**
  * Tobacco prices from every wholesaler, side by side. Pick what the store needs and the
  * list splits itself by whichever wholesaler is cheapest for each product.
@@ -46,6 +44,9 @@ function PricesPage({ biz }: { biz: string }) {
   const prices = useWholesalePrices()
   const [q, setQ] = useState('')
   const [cat, setCat] = useState<WholesaleCategory | 'all'>('all')
+  const [sort, setSort] = useState<PriceSort>('name')
+  const [max, setMax] = useState<number | null>(null)
+  const [limit, setLimit] = useState(PAGE)
   const [list, setList] = useState<WantedItem[]>(() => load(listKey(biz), []))
   const [off, setOff] = useState<string[]>(() => load(OFF_KEY, []))
 
@@ -73,7 +74,9 @@ function PricesPage({ biz }: { biz: string }) {
     setList((l) => qty <= 0 ? l.filter((i) => i.productId !== id)
       : l.some((i) => i.productId === id) ? l.map((i) => (i.productId === id ? { ...i, qty } : i)) : [...l, { productId: id, qty }])
 
-  const found = (products.data ?? []).filter((p) => (cat === 'all' || p.category === cat) && matches(p, q))
+  const one = cat !== 'all'
+  const found = byPrice((products.data ?? []).filter((p) => (!one || p.category === cat) && matches(p, q)),
+    (p) => unitPrices(priced(p.id))[0]?.unit_price_inc_gst, (p) => p.name, one ? sort : 'name', one ? max : null)
   const result = plan(list, byId, byProduct, allowed)
 
   return (
@@ -98,24 +101,21 @@ function PricesPage({ biz }: { biz: string }) {
       <div className="grid items-start gap-4 desk:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="card overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-line px-3.5 py-3 desk:px-5">
-            <SearchBox value={q} onChange={setQ} placeholder="Search or scan a barcode" />
-            <Segmented ariaLabel="Category" value={cat} onChange={setCat}
+            <SearchBox value={q} onChange={(v) => { setQ(v); setLimit(PAGE) }} placeholder="Search or scan a barcode" />
+            <Segmented ariaLabel="Category" value={cat} onChange={(c) => { setCat(c); setMax(null); setLimit(PAGE) }}
               options={[{ value: 'all', label: 'All' }, ...CATEGORIES]} />
+            {one && <PriceFilters key={cat} sort={sort} onSort={setSort} max={max} onMax={(n) => { setMax(n); setLimit(PAGE) }} unit={UNIT_OF[cat]} />}
           </div>
           {!found.length ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">Nothing matches “{q}”.</p>
+            <p className="px-5 py-8 text-center text-sm text-muted">{max != null && one ? `Nothing at or under ${aud(max)} a ${UNIT_OF[cat as WholesaleCategory]}.` : `Nothing matches “${q}”.`}</p>
           ) : (
             <ul className="divide-y divide-line-2">
-              {found.slice(0, SHOWN).map((p) => (
+              {found.slice(0, limit).map((p) => (
                 <ProductRow key={p.id} product={p} prices={priced(p.id)} qty={qtyOf(p.id)} onQty={(n) => setQty(p.id, n)} />
               ))}
             </ul>
           )}
-          {found.length > SHOWN && (
-            <p className="border-t border-line px-5 py-3 text-xs text-muted">
-              Showing {SHOWN} of {found.length}. Type more of the name to narrow it down.
-            </p>
-          )}
+          <ShowMore shown={Math.min(limit, found.length)} total={found.length} onMore={() => setLimit(limit + PAGE)} onAll={() => setLimit(found.length)} />
         </section>
 
         <OrderPanel

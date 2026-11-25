@@ -6,10 +6,12 @@ import {
 } from '../lib/api'
 import { useBusinessId } from '../lib/business'
 import { aud, cents, parseMoney } from '../lib/format'
-import type { StockItem, Supplier, WholesalePrice, WholesaleProduct } from '../lib/types'
-import { CATEGORIES, options, orderStep, planOrder, qtyLabel, unitPrices, type OrderLine, type WholesaleOrder } from '../lib/wholesale'
+import type { StockItem, Supplier, WholesaleCategory, WholesalePrice, WholesaleProduct } from '../lib/types'
+import {
+  byPrice, CATEGORIES, options, orderStep, PAGE, planOrder, qtyLabel, unitPrices, UNIT_OF, type OrderLine, type PriceSort, type WholesaleOrder,
+} from '../lib/wholesale'
 import { Drawer, Empty, ErrorBox, Loading, PageHeader, Pill, SaveBar, SearchBox, Segmented } from '../components/ui'
-import { Stepper } from '../components/wholesale'
+import { PriceFilters, ShowMore, Stepper } from '../components/wholesale'
 
 /** What's being ordered, kept on this device until the orders are made. */
 interface Draft {
@@ -64,7 +66,10 @@ function OrderPage({ biz }: { biz: string }) {
   const autoLink = useAutoLinkWholesale()
   const create = useCreateWholesaleOrders()
   const [q, setQ] = useState('')
-  const [cat, setCat] = useState<string>('all')
+  const [cat, setCat] = useState<WholesaleCategory | 'all'>('all')
+  const [sort, setSort] = useState<PriceSort>('name')
+  const [max, setMax] = useState<number | null>(null)
+  const [limit, setLimit] = useState(PAGE)
   const [draft, setDraft] = useState<Draft>(() => loadDraft(biz))
   const [tolerance, setTolerance] = useState(loadTolerance)
   const [linking, setLinking] = useState<StockItem | null>(null)
@@ -104,8 +109,10 @@ function OrderPage({ biz }: { biz: string }) {
   const cats = CATEGORIES.filter((c) => orderable.some((i) => productOf.get(i.id)!.category === c.value))
 
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
-  const shown = orderable.filter((i) => (cat === 'all' || productOf.get(i.id)!.category === cat)
-    && words.every((w) => i.name.toLowerCase().includes(w) || productOf.get(i.id)!.name.toLowerCase().includes(w)))
+  const one = cat !== 'all'
+  const shown = byPrice(orderable.filter((i) => (!one || productOf.get(i.id)!.category === cat)
+    && words.every((w) => i.name.toLowerCase().includes(w) || productOf.get(i.id)!.name.toLowerCase().includes(w))),
+  (i) => unitPrices(byProduct.get(productOf.get(i.id)!.id) ?? [])[0]?.unit_price_inc_gst, (i) => i.name, one ? sort : 'name', one ? max : null)
 
   const setQty = (itemId: string, n: number) => setDraft((d) => {
     const qty = { ...d.qty }
@@ -171,26 +178,29 @@ function OrderPage({ biz }: { biz: string }) {
       <div className="grid items-start gap-4 desk:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="card overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-line px-3.5 py-3 desk:px-5">
-            <SearchBox value={q} onChange={setQ} placeholder="Search your products" />
+            <SearchBox value={q} onChange={(v) => { setQ(v); setLimit(PAGE) }} placeholder="Search your products" />
             {cats.length > 1 && (
-              <Segmented ariaLabel="Category" value={cat} onChange={setCat} options={[{ value: 'all', label: 'All' }, ...cats]} />
+              <Segmented ariaLabel="Category" value={cat} onChange={(c) => { setCat(c); setMax(null); setLimit(PAGE) }}
+                options={[{ value: 'all', label: 'All' }, ...cats]} />
             )}
+            {one && <PriceFilters key={cat} sort={sort} onSort={setSort} max={max} onMax={(n) => { setMax(n); setLimit(PAGE) }} unit={UNIT_OF[cat]} />}
           </div>
           {!orderable.length ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
               None of your products are linked to wholesale prices yet. Link them below.
             </p>
           ) : !shown.length ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">Nothing matches “{q}”.</p>
+            <p className="px-5 py-8 text-center text-sm text-muted">{max != null && one ? `Nothing at or under ${aud(max)} a ${UNIT_OF[cat]}.` : `Nothing matches “${q}”.`}</p>
           ) : (
             <ul className="divide-y divide-line-2">
-              {shown.map((i) => (
+              {shown.slice(0, limit).map((i) => (
                 <ProductRow key={i.id} item={i} product={productOf.get(i.id)!} prices={byProduct.get(productOf.get(i.id)!.id) ?? []}
                   qty={draft.qty[i.id] ?? 0} line={lineOf.get(i.id)} pick={draft.pick[i.id]} sellerName={sellerName}
                   onQty={(n) => setQty(i.id, n)} onPick={(w) => setPick(i.id, w)} onRelink={() => setLinking(i)} />
               ))}
             </ul>
           )}
+          <ShowMore shown={Math.min(limit, shown.length)} total={shown.length} onMore={() => setLimit(limit + PAGE)} onAll={() => setLimit(shown.length)} />
           {unlinked.length > 0 && <Unlinked items={unlinked} onLink={setLinking} />}
         </section>
 

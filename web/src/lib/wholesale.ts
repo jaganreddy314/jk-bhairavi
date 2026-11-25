@@ -282,3 +282,30 @@ export function planOrder(items: WantedItem[], products: Map<string, WholesalePr
     missing,
   }
 }
+
+// ---------- browsing the list ----------
+
+/** What one retail unit is called in each category, for "$44.70 a pack". */
+export const UNIT_OF: Record<WholesaleCategory, string> = {
+  cigarettes: 'pack', tobacco: 'pouch', cigars: 'pack', filters: 'box', papers: 'booklet', lighters: 'lighter',
+}
+
+export type PriceSort = 'name' | 'low' | 'high'
+
+/** How many rows a product list shows at first, and how many more each "Show more" adds. */
+export const PAGE = 50
+
+/**
+ * A product list by price: only those at or under `max` a unit (when given), sorted by name or
+ * by price. Rows without a price sort last and drop out once a maximum is set.
+ */
+export function byPrice<T>(rows: T[], price: (r: T) => number | undefined, name: (r: T) => string, sort: PriceSort, max: number | null) {
+  const kept = max == null ? rows : rows.filter((r) => { const p = price(r); return p != null && p <= max + 1e-9 })
+  if (sort === 'name') return [...kept].sort((a, b) => name(a).localeCompare(name(b)))
+  const dir = sort === 'low' ? 1 : -1
+  return [...kept].sort((a, b) => {
+    const pa = price(a), pb = price(b)
+    if (pa == null || pb == null) return pa == null && pb == null ? name(a).localeCompare(name(b)) : pa == null ? 1 : -1
+    return (pa - pb) * dir || name(a).localeCompare(name(b))
+  })
+}
